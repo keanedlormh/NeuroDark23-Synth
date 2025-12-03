@@ -1,5 +1,5 @@
 /*
- * NEURODARK 23 - NATIVE CORE v22 (Filters)
+ * NEURODARK 23 - NATIVE CORE v23 (UI Update)
  */
 
 const AppState = {
@@ -13,7 +13,8 @@ const AppState = {
     currentOctave: 3,
     distortionLevel: 20,
     panelMode: 'docked',
-    exportReps: 1
+    exportReps: 1,
+    controlMode: 'analog' // 'analog' | 'digital'
 };
 
 let audioCtx = null;
@@ -37,7 +38,7 @@ function safeClick(id, fn) {
 
 // --- BOOTSTRAP ---
 function bootstrap() {
-    window.logToScreen("Boot Filters...");
+    window.logToScreen("Boot UI v23...");
     try {
         if(!window.timeMatrix) throw "TimeMatrix Missing";
         if(typeof window.BassSynth === 'undefined') throw "BassSynth Missing";
@@ -133,7 +134,6 @@ async function renderAudio() {
         bassSynths.forEach(ls => {
             const s = new window.BassSynth(ls.id);
             s.init(offCtx, offMaster);
-            // Copy Params
             s.setDistortion(ls.params.distortion);
             s.setCutoff(ls.params.cutoff);
             s.setResonance(ls.params.resonance);
@@ -320,16 +320,6 @@ function setTab(v) {
     AppState.activeView = v;
     renderInstrumentTabs();
     updateEditors();
-    const s = bassSynths.find(sy=>sy.id===v);
-    if(s) {
-        const slDist = document.getElementById('dist-slider');
-        const slCut = document.getElementById('cutoff-slider');
-        const slRes = document.getElementById('res-slider');
-        
-        if(slDist) slDist.value = s.params.distortion;
-        if(slCut) slCut.value = s.params.cutoff;
-        if(slRes) slRes.value = s.params.resonance;
-    }
 }
 
 function renderTrackBar() {
@@ -353,10 +343,83 @@ function updateEditors() {
     const dEd = document.getElementById('editor-drum');
     const info = document.getElementById('step-info-display');
     if(info) info.innerText = `STEP ${AppState.selectedStep+1} // ${AppState.activeView.toUpperCase()}`;
-    if(AppState.activeView === 'drum') { bEd.classList.add('hidden'); dEd.classList.remove('hidden'); renderDrumRows(); }
-    else { bEd.classList.remove('hidden'); dEd.classList.add('hidden'); }
+    
+    if(AppState.activeView === 'drum') { 
+        bEd.classList.add('hidden'); 
+        dEd.classList.remove('hidden'); 
+        renderDrumRows(); 
+    } else { 
+        bEd.classList.remove('hidden'); 
+        dEd.classList.add('hidden'); 
+        // Re-render synth controls dynamically (Digital vs Analog)
+        renderSynthControls(); 
+    }
+    
     window.timeMatrix.selectedStep = AppState.selectedStep;
     window.timeMatrix.render(AppState.activeView, AppState.editingBlock);
+}
+
+// NEW FUNCTION: DYNAMIC CONTROLS RENDERING
+function renderSynthControls() {
+    const container = document.getElementById('synth-controls-area');
+    if(!container) return;
+    
+    // Find current synth to get values
+    const s = bassSynths.find(sy => sy.id === AppState.activeView);
+    const defaults = s ? s.params : { cutoff: 800, resonance: 4, distortion: 20 };
+
+    container.innerHTML = '';
+
+    const createControl = (label, id, min, max, val, prop) => {
+        const wrap = document.createElement('div');
+        wrap.className = "flex-1 bg-gray-900 p-1 rounded border border-gray-800 flex flex-col justify-center relative";
+        
+        const lbl = document.createElement('label');
+        lbl.className = "text-[8px] text-gray-500 text-center block mb-1";
+        lbl.innerText = label;
+        wrap.appendChild(lbl);
+
+        let input;
+        
+        if(AppState.controlMode === 'analog') {
+            // Slider Mode
+            input = document.createElement('input');
+            input.type = 'range';
+            input.className = "w-full h-1 bg-black rounded appearance-none cursor-pointer";
+        } else {
+            // Digital Mode
+            input = document.createElement('input');
+            input.type = 'number';
+            input.className = "w-full digital-input text-xs py-1";
+        }
+
+        input.id = id;
+        input.min = min;
+        input.max = max;
+        input.value = val;
+
+        // Input Logic
+        input.oninput = (e) => {
+            let v = parseInt(e.target.value);
+            // Clamp values for digital input safety
+            if(v > max) v = max;
+            if(v < min) v = min;
+            
+            const currentSynth = bassSynths.find(sy => sy.id === AppState.activeView);
+            if(currentSynth) {
+                if(prop === 'distortion') currentSynth.setDistortion(v);
+                if(prop === 'cutoff') currentSynth.setCutoff(v);
+                if(prop === 'resonance') currentSynth.setResonance(v);
+            }
+        };
+
+        wrap.appendChild(input);
+        return wrap;
+    };
+
+    container.appendChild(createControl('CUT', 'cutoff-ctrl', 100, 5000, defaults.cutoff, 'cutoff'));
+    container.appendChild(createControl('RES', 'res-ctrl', 0, 20, defaults.resonance, 'resonance'));
+    container.appendChild(createControl('DRV', 'dist-ctrl', 0, 100, defaults.distortion, 'distortion'));
 }
 
 function renderDrumRows() {
@@ -393,7 +456,7 @@ function toggleTransport() {
     AppState.isPlaying = !AppState.isPlaying;
     const btn = document.getElementById('btn-play');
     if(AppState.isPlaying) {
-        btn.innerHTML = "&#10074;&#10074;";
+        btn.innerHTML = "&#10074;&#10074;"; // Pause icon
         btn.classList.add('border-green-500', 'text-green-500');
         AppState.currentPlayStep = 0; AppState.currentPlayBlock = AppState.editingBlock;
         nextNoteTime = audioCtx.currentTime + 0.1; visualQueue = [];
@@ -401,7 +464,7 @@ function toggleTransport() {
         drawLoop();
         window.logToScreen("PLAY");
     } else {
-        btn.innerHTML = "&#9658;";
+        btn.innerHTML = "&#9658;"; // Play icon
         btn.classList.remove('border-green-500', 'text-green-500');
         if(clockWorker) clockWorker.postMessage("stop");
         cancelAnimationFrame(drawFrameId); window.timeMatrix.highlightPlayingStep(-1); updatePlayClock(-1);
@@ -440,6 +503,19 @@ document.addEventListener('DOMContentLoaded', () => {
     safeClick('btn-menu-panic', () => location.reload());
     safeClick('btn-menu-clear', () => { if(confirm("Clear?")) { window.timeMatrix.clearBlock(AppState.editingBlock); updateEditors(); toggleMenu(); }});
     
+    // UI Mode Toggle
+    safeClick('btn-toggle-ui-mode', () => {
+        const btn = document.getElementById('btn-toggle-ui-mode');
+        if(AppState.controlMode === 'analog') {
+            AppState.controlMode = 'digital';
+            btn.innerText = "UI MODE: DIGITAL";
+        } else {
+            AppState.controlMode = 'analog';
+            btn.innerText = "UI MODE: ANALOG";
+        }
+        updateEditors(); // Re-render controls
+    });
+
     // Track Actions
     safeClick('btn-add-block', () => { window.timeMatrix.addBlock(); AppState.editingBlock = window.timeMatrix.blocks.length-1; updateEditors(); renderTrackBar(); });
     safeClick('btn-del-block', () => { if(confirm("Del?")) { window.timeMatrix.removeBlock(AppState.editingBlock); AppState.editingBlock = Math.max(0, window.timeMatrix.blocks.length-1); updateEditors(); renderTrackBar(); }});
@@ -465,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
         p.classList.toggle('panel-docked'); p.classList.toggle('panel-overlay');
         const ph = document.getElementById('dock-placeholder');
         const btn = document.getElementById('btn-dock-mode');
-        if(p.classList.contains('panel-docked')) { ph.appendChild(p); btn.innerHTML = "&#9633;"; } 
+        if(p.classList.contains('panel-docked')) { if(ph) ph.appendChild(p); btn.innerHTML = "&#9633;"; } 
         else { document.body.appendChild(p); btn.innerHTML = "_"; }
     });
     
@@ -501,21 +577,4 @@ document.addEventListener('DOMContentLoaded', () => {
     const octD = document.getElementById('oct-display');
     safeClick('oct-up', () => { if(AppState.currentOctave<6) AppState.currentOctave++; octD.innerText=AppState.currentOctave; });
     safeClick('oct-down', () => { if(AppState.currentOctave>1) AppState.currentOctave--; octD.innerText=AppState.currentOctave; });
-    
-    // NEW SLIDERS LOGIC
-    const handleSlider = (id, prop) => {
-        const el = document.getElementById(id);
-        if(el) el.oninput = (e) => {
-            const v = parseInt(e.target.value);
-            const s = bassSynths.find(sy => sy.id === AppState.activeView);
-            if(s) {
-                if(prop === 'distortion') s.setDistortion(v);
-                if(prop === 'cutoff') s.setCutoff(v);
-                if(prop === 'resonance') s.setResonance(v);
-            }
-        };
-    };
-    handleSlider('dist-slider', 'distortion');
-    handleSlider('cutoff-slider', 'cutoff');
-    handleSlider('res-slider', 'resonance');
 });
