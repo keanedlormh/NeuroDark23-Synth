@@ -1,5 +1,5 @@
 /*
- * BASS SYNTH MODULE (With FX Chain)
+ * BASS SYNTH MODULE (With FX Chain & Accent/Slide)
  */
 
 class BassSynth {
@@ -8,6 +8,9 @@ class BassSynth {
         this.ctx = null;
         this.output = null;
         this.fxChain = null;
+        
+        // Internal State for Slides
+        this.lastFreq = 0;
         
         this.params = {
             distortion: 20,
@@ -42,7 +45,7 @@ class BassSynth {
     setCutoff(val) { this.params.cutoff = val; }
     setResonance(val) { this.params.resonance = val; }
 
-    play(note, octave, time, duration = 0.25) {
+    play(note, octave, time, duration = 0.25, slide = false, accent = false) {
         if (!this.ctx) return;
 
         const noteMap = {'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11};
@@ -56,34 +59,56 @@ class BassSynth {
         const gain = this.ctx.createGain();
         const filter = this.ctx.createBiquadFilter();
 
-        // OSC
+        // --- OSCILLATOR ---
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(freq, time);
+        
+        if (slide && this.lastFreq > 0) {
+            // Slide: Start from previous frequency
+            osc.frequency.setValueAtTime(this.lastFreq, time);
+            osc.frequency.linearRampToValueAtTime(freq, time + 0.1); // Glide time
+        } else {
+            // No Slide: Start instant
+            osc.frequency.setValueAtTime(freq, time);
+        }
+        
+        // Store for next step
+        this.lastFreq = freq;
+        
         osc.detune.setValueAtTime((Math.random() * 8) - 4, time); 
 
-        // FILTER (Dynamic)
+        // --- FILTER ---
         filter.type = 'lowpass';
-        // Cutoff modulation
         const baseCutoff = this.params.cutoff;
         filter.frequency.setValueAtTime(baseCutoff, time);
-        filter.Q.value = this.params.resonance;
+        
+        // ACCENT: More Resonance & Filter Envelope
+        filter.Q.value = accent ? this.params.resonance * 1.5 : this.params.resonance;
+        const envAmount = accent ? 2000 : 1000;
+
+        const attackTime = slide ? 0.05 : 0.05; 
+        const decayTime = duration;
         
         // Filter Envelope
-        const attackTime = 0.05;
-        const decayTime = duration;
-        filter.frequency.linearRampToValueAtTime(baseCutoff + 1000, time + attackTime);
+        filter.frequency.linearRampToValueAtTime(baseCutoff + envAmount, time + attackTime);
         filter.frequency.exponentialRampToValueAtTime(baseCutoff, time + attackTime + decayTime);
 
-        // AMP
+        // --- AMPLIFIER (VCA) ---
+        // ACCENT: Higher Volume
+        const peakGain = accent ? 0.8 : 0.5;
+
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.5, time + 0.02);
+        if (slide) {
+             // Slide Legato: Attack is faster/immediate
+            gain.gain.linearRampToValueAtTime(peakGain, time + 0.01);
+        } else {
+            gain.gain.linearRampToValueAtTime(peakGain, time + 0.02);
+        }
         gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
 
-        // ROUTING
+        // --- ROUTING ---
         osc.connect(filter);
         filter.connect(gain);
         
-        // FX Chain Injection
         if (this.fxChain) {
             gain.connect(this.fxChain.input);
         } else {
