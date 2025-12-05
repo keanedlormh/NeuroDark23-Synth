@@ -15,9 +15,11 @@ class BassSynth {
         
         this.params = {
             distortion: 20,
-            cutoff: 800,
-            resonance: 4,
-            waveform: 'sawtooth' // 'sawtooth' or 'square'
+            cutoff: 400,      // Frecuencia base
+            resonance: 8,
+            envMod: 60,       // Cantidad de envolvente [0-100]
+            decay: 40,        // Tiempo de decaimiento [0-100]
+            waveform: 'sawtooth'
         };
     }
 
@@ -46,7 +48,9 @@ class BassSynth {
     }
     setCutoff(val) { this.params.cutoff = val; }
     setResonance(val) { this.params.resonance = val; }
-    setWaveform(val) { this.params.waveform = val; } // Nueva función
+    setEnvMod(val) { this.params.envMod = val; }
+    setDecay(val) { this.params.decay = val; }
+    setWaveform(val) { this.params.waveform = val; }
 
     play(note, octave, time, duration = 0.25, slide = false, accent = false) {
         if (!this.ctx) return;
@@ -62,8 +66,7 @@ class BassSynth {
         const gain = this.ctx.createGain();
         const filter = this.ctx.createBiquadFilter();
 
-        // --- 1. OSCILADOR & WAVEFORM ---
-        // APLICAR FORMA DE ONDA SELECCIONADA
+        // --- 1. OSCILADOR ---
         osc.type = this.params.waveform; 
         
         if (!this.lastFreq) this.lastFreq = freq;
@@ -78,33 +81,47 @@ class BassSynth {
         this.lastFreq = freq;
         osc.detune.setValueAtTime((Math.random() * 6) - 3, time); 
 
-        // --- 2. FILTRO ---
+        // --- 2. FILTRO (CRITICAL UPDATE) ---
         filter.type = 'lowpass';
-        const baseCutoff = Math.max(100, this.params.cutoff);
         
+        // Base Cutoff (Clamp low end to avoid silence)
+        const baseCutoff = Math.max(50, this.params.cutoff);
         filter.frequency.setValueAtTime(baseCutoff, time);
         
+        // Resonance
         const currentRes = this.params.resonance;
-        filter.Q.value = accent ? Math.min(30, currentRes * 2.5 + 5) : currentRes;
+        filter.Q.value = accent ? Math.min(30, currentRes * 1.5 + 5) : currentRes;
         
-        const envAmount = accent ? 3500 : 1500;
-        const decayTime = accent ? 0.15 : duration; 
-        const attackTime = slide ? 0.08 : 0.03;
+        // Envelope Calculation
+        // EnvMod: 0-100 -> 0Hz - 5000Hz range added to cutoff
+        let envAmountHz = (this.params.envMod / 100) * 4500;
+        if (accent) envAmountHz *= 1.5; // Accent boosts envelope height
 
-        filter.frequency.linearRampToValueAtTime(baseCutoff + envAmount, time + attackTime);
-        filter.frequency.exponentialRampToValueAtTime(baseCutoff, time + attackTime + decayTime);
+        // Decay Calculation
+        // Decay: 0-100 -> 0.1s - 1.0s
+        // Accent usually has fixed decay (short/punchy), but we can adapt
+        let decayTimeSec = 0.1 + (this.params.decay / 100) * 0.8;
+        if (accent) decayTimeSec = Math.max(0.1, decayTimeSec * 0.6); // Accent is snappier
+        
+        // Filter Envelope
+        const attackTime = slide ? 0.08 : 0.02; // Fast attack
+        
+        // Envelope peak
+        filter.frequency.linearRampToValueAtTime(baseCutoff + envAmountHz, time + attackTime);
+        // Envelope decay
+        filter.frequency.exponentialRampToValueAtTime(baseCutoff, time + attackTime + decayTimeSec);
 
         // --- 3. AMPLIFICADOR ---
-        const peakGain = accent ? 0.9 : 0.5;
+        const peakGain = accent ? 0.9 : 0.6;
 
         gain.gain.setValueAtTime(0, time);
         
         if (slide) {
             gain.gain.linearRampToValueAtTime(peakGain, time + 0.005);
-            gain.gain.exponentialRampToValueAtTime(0.1, time + duration);
+            gain.gain.exponentialRampToValueAtTime(0.1, time + duration); // Sustain for slide
         } else {
-            gain.gain.linearRampToValueAtTime(peakGain, time + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+            gain.gain.linearRampToValueAtTime(peakGain, time + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + decayTimeSec); // Amp follows Filter Decay mostly
         }
 
         // --- RUTEO ---
@@ -118,7 +135,7 @@ class BassSynth {
         }
 
         osc.start(time);
-        osc.stop(time + duration + 0.1);
+        osc.stop(time + duration + 0.2); // Extra release time
 
         osc.onended = () => {
             osc.disconnect();
