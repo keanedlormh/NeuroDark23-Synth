@@ -18,9 +18,10 @@ body {
 .custom-scroll::-webkit-scrollbar-track { background: #000; }
 .custom-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 
-/* LOG */
+/* LOG - IMPROVED COLORS */
 .log-info { color: #0f0; margin-bottom: 2px; border-left: 2px solid #004400; padding-left: 4px; }
-.log-err { color: #f55; margin-bottom: 2px; font-weight: bold; border-left: 2px solid #500; padding-left: 4px; }
+.log-warn { color: #fe0; margin-bottom: 2px; border-left: 2px solid #880; padding-left: 4px; }
+.log-err { color: #f55; margin-bottom: 2px; font-weight: bold; border-left: 2px solid #500; padding-left: 4px; background: rgba(255,0,0,0.1); }
 
 /* TRACK CONTROLS */
 .track-ctrl-btn {
@@ -59,7 +60,7 @@ body {
 }
 .step-box:active { transform: scale(0.95); }
 
-/* VISUALIZADOR DE SELECCIÓN NARANJA (Frame interior) */
+/* VISUALIZADOR DE SELECCIÓN NARANJA */
 .step-selected-orange {
     border-color: var(--neon-orange) !important;
     box-shadow: inset 0 0 0 2px var(--neon-orange), inset 0 0 15px rgba(255, 157, 0, 0.4);
@@ -74,14 +75,14 @@ body {
 .black-key { background: #222; color: #666; border: 1px solid #444; border-bottom: 3px solid #000; height: 85%; margin-top: 0; }
 .piano-key:active { background: var(--neon-green) !important; color: #000 !important; border-bottom-color: #004400; transform: translateY(2px); }
 
-/* PANEL ESTADOS - CORREGIDO OVERFLOW */
+/* PANEL ESTADOS */
 .panel-expanded { 
-    height: 300px; /* Altura cómoda para ver controles y piano */
+    height: 300px;
     overflow: hidden !important; 
 } 
 .panel-collapsed { 
-    height: 32px; /* Altura exacta del header */
-    overflow: hidden !important; /* CRUCIAL: Oculta lo que sobra */
+    height: 32px; 
+    overflow: hidden !important; 
 }
 
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; background: var(--neon-green); border-radius: 50%; border: 2px solid #000; box-shadow: 0 0 8px var(--neon-green); }
