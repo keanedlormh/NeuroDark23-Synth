@@ -1,5 +1,5 @@
 /*
- * NEURODARK 23 - NATIVE CORE v22 (Filters)
+ * NEURODARK 23 - NATIVE CORE v23 (Fix & Integration)
  */
 
 const AppState = {
@@ -125,7 +125,6 @@ function syncControlsFromSynth(viewId) {
 
     if(!s) return;
     
-    // Analog & Digital Sync (With null checks)
     const setVal = (id, val) => {
         const el = document.getElementById(id);
         if(el) el.value = val;
@@ -139,14 +138,12 @@ function syncControlsFromSynth(viewId) {
         dec: s.params.decay
     };
 
-    // Sliders
     setVal('dist-slider', params.dist);
     setVal('cutoff-slider', params.cutoff);
     setVal('res-slider', params.res);
     setVal('env-slider', params.env);
     setVal('dec-slider', params.dec);
 
-    // Digital (Percents)
     const cutPerc = Math.round(((params.cutoff - 50) / 4950) * 100);
     const resPerc = Math.round(params.res * 5);
     
@@ -157,9 +154,8 @@ function syncControlsFromSynth(viewId) {
     setVal('dec-digital', params.dec);
 }
 
-// --- SETUP (ORDER FIX) ---
+// --- SETUP ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. SETUP LISTENERS FIRST (So buttons work even if audio fails)
     document.addEventListener('click', globalUnlock);
     document.addEventListener('touchstart', globalUnlock);
     
@@ -171,11 +167,10 @@ document.addEventListener('DOMContentLoaded', () => {
     safeClick('btn-toggle-ui-mode', toggleUIMode);
     safeClick('btn-toggle-visualizer', toggleVisualizerMode);
     
-    // Panel Toggle
     safeClick('btn-minimize-panel', (e) => { e.stopPropagation(); togglePanelState(); });
     safeClick('panel-header-trigger', togglePanelState);
 
-    // Log Toggle
+    // Log Toggle Logic
     const logPanel = document.getElementById('sys-log-panel');
     const logBtn = document.getElementById('btn-toggle-log-internal');
     const toggleLog = () => {
@@ -194,7 +189,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     safeClick('btn-waveform', toggleWaveform);
 
-    // Binding Sliders
     const bindSlider = (id, param) => {
         const el = document.getElementById(id);
         if(el) el.oninput = (e) => updateSynthParam(param, parseInt(e.target.value));
@@ -205,7 +199,6 @@ document.addEventListener('DOMContentLoaded', () => {
     bindSlider('env-slider', 'envMod');
     bindSlider('dec-slider', 'decay');
 
-    // Matrix & Piano
     window.addEventListener('stepSelect', (e) => { AppState.selectedStep = e.detail.index; updateEditors(); });
     
     document.querySelectorAll('.piano-key').forEach(k => {
@@ -232,7 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(s) { window.timeMatrix.blocks[AppState.editingBlock].tracks[s.id][AppState.selectedStep] = null; updateEditors(); }
     });
 
-    // Modifiers
     const toggleNoteMod = (prop) => {
         if(AppState.activeView === 'drum') return;
         const b = window.timeMatrix.blocks[AppState.editingBlock];
@@ -244,13 +236,11 @@ document.addEventListener('DOMContentLoaded', () => {
     safeClick('btn-toggle-slide', () => toggleNoteMod('slide'));
     safeClick('btn-toggle-accent', () => toggleNoteMod('accent'));
 
-    // Global Params
     const bpm = document.getElementById('bpm-input'); if(bpm) bpm.onchange = (e) => AppState.bpm = e.target.value;
     const octD = document.getElementById('oct-display');
     safeClick('oct-up', () => { if(AppState.currentOctave<6) AppState.currentOctave++; octD.innerText=AppState.currentOctave; });
     safeClick('oct-down', () => { if(AppState.currentOctave>1) AppState.currentOctave--; octD.innerText=AppState.currentOctave; });
 
-    // Actions
     safeClick('btn-add-synth', addBassSynth);
     safeClick('btn-menu-panic', () => location.reload());
     safeClick('btn-menu-clear', () => { if(confirm("Clear?")) { window.timeMatrix.clearBlock(AppState.editingBlock); updateEditors(); toggleMenu(); }});
@@ -261,7 +251,6 @@ document.addEventListener('DOMContentLoaded', () => {
     safeClick('btn-move-left', () => { if(window.timeMatrix.moveBlock(AppState.editingBlock, -1)) { AppState.editingBlock--; updateEditors(); renderTrackBar(); }});
     safeClick('btn-move-right', () => { if(window.timeMatrix.moveBlock(AppState.editingBlock, 1)) { AppState.editingBlock++; updateEditors(); renderTrackBar(); }});
     
-    // Export
     safeClick('btn-open-export', () => { toggleMenu(); toggleExportModal(); });
     safeClick('btn-close-export', toggleExportModal);
     safeClick('btn-start-render', renderAudio);
@@ -273,11 +262,10 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     });
 
-    // 2. NOW BOOTSTRAP ENGINE
     bootstrap();
 });
 
-// --- HELPER FUNCTIONS ---
+// --- HELPER FUNCTIONS (DEFINED GLOBALLY) ---
 function updateSynthParam(param, value) {
     const s = bassSynths.find(sy => sy.id === AppState.activeView);
     if(!s) return;
@@ -303,7 +291,6 @@ function setupDigitalRepeaters() {
             if(!s) return;
             
             let current = 0;
-            // Get current base value
             if(target === 'distortion') current = s.params.distortion;
             else if(target === 'envMod') current = s.params.envMod;
             else if(target === 'decay') current = s.params.decay;
@@ -312,7 +299,6 @@ function setupDigitalRepeaters() {
 
             let next = Math.max(0, Math.min(100, current + dir));
             
-            // Apply back
             if(target === 'distortion') s.setDistortion(next);
             else if(target === 'envMod') s.setEnvMod(next);
             else if(target === 'decay') s.setDecay(next);
@@ -349,6 +335,17 @@ function toggleWaveform() {
         s.setWaveform(next);
         syncControlsFromSynth(AppState.activeView);
     }
+}
+
+// --- RESTORED FUNCTIONS ---
+function toggleMenu() {
+    const m = document.getElementById('main-menu');
+    if(m) { m.classList.toggle('hidden'); m.classList.toggle('flex'); }
+}
+
+function toggleExportModal() {
+    const m = document.getElementById('export-modal');
+    if(m) { m.classList.toggle('hidden'); m.classList.toggle('flex'); }
 }
 
 function renderTrackBar() { const c = document.getElementById('track-bar'); if(!c) return; c.innerHTML = ''; const blocks = window.timeMatrix.blocks; document.getElementById('display-total-blocks').innerText = blocks.length; document.getElementById('display-current-block').innerText = AppState.editingBlock + 1; blocks.forEach((_, i) => { const el = document.createElement('div'); el.className = `track-block ${i===AppState.editingBlock ? 'track-block-editing' : ''} ${AppState.isPlaying && i===AppState.currentPlayBlock ? 'track-block-playing' : ''}`; el.innerText = i + 1; el.onclick = () => { AppState.editingBlock = i; updateEditors(); renderTrackBar(); }; c.appendChild(el); }); }
