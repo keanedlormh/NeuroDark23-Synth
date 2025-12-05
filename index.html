@@ -7,34 +7,52 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="style.css">
     
+    <!-- SYSTEM LOGGER (CRITICAL) -->
     <script>
         window.logToScreen = function(msg, type='info') {
             const consoleEl = document.getElementById('sys-log-content');
             if(consoleEl) {
                 const line = document.createElement('div');
-                line.className = type === 'error' ? 'log-err' : 'log-info';
+                line.className = type === 'error' ? 'log-err' : (type === 'warn' ? 'log-warn' : 'log-info');
                 const time = new Date().toLocaleTimeString().split(' ')[0];
                 line.innerText = `[${time}] ${msg}`;
                 consoleEl.appendChild(line);
                 consoleEl.scrollTop = consoleEl.scrollHeight;
             }
             console.log(`[ND23] ${msg}`);
-        }
+        };
+
+        // Captura de errores globales
         window.onerror = function(msg, url, line) {
-            setTimeout(() => window.logToScreen(`CRASH: ${msg} (L${line})`, 'error'), 500);
-        }
+            window.logToScreen(`CRITICAL: ${msg} (L${line})`, 'error');
+            // Forzar apertura del log si hay error
+            const p = document.getElementById('sys-log-panel');
+            if(p) { 
+                p.classList.remove('-translate-y-full'); 
+                p.classList.add('translate-y-0');
+            }
+            return false;
+        };
+
+        // Captura de promesas fallidas
+        window.addEventListener('unhandledrejection', function(event) {
+            window.logToScreen(`ASYNC ERR: ${event.reason}`, 'error');
+        });
     </script>
 </head>
 <body class="bg-black text-gray-300 font-mono overflow-hidden fixed inset-0 select-none">
 
-    <!-- LOGS -->
-    <div id="sys-log-panel" class="fixed top-0 left-0 w-full h-32 bg-black/95 border-b border-green-900 z-[200] transition-transform duration-300 flex flex-col font-mono text-[10px] transform -translate-y-full">
+    <!-- LOGS PANEL (OPEN BY DEFAULT) -->
+    <div id="sys-log-panel" class="fixed top-0 left-0 w-full h-40 bg-black/95 border-b border-green-900 z-[200] transition-transform duration-300 flex flex-col font-mono text-[10px] transform translate-y-0 shadow-lg">
         <div class="bg-green-900/20 px-2 py-1 flex justify-between items-center border-b border-green-900/50">
-            <span class="text-green-500 font-bold tracking-widest">:: SYSTEM_LOG ::</span>
-            <button id="btn-toggle-log-internal" class="text-green-500 hover:text-white px-2">[ HIDE ]</button>
+            <span class="text-green-500 font-bold tracking-widest">:: SYSTEM_DEBUG ::</span>
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('sys-log-content').innerHTML=''" class="text-xs text-gray-500 hover:text-white px-2 border border-gray-700 hover:border-white">CLEAR</button>
+                <button id="btn-toggle-log-internal" class="text-green-500 hover:text-white px-2 font-bold">[ HIDE ]</button>
+            </div>
         </div>
-        <div id="sys-log-content" class="flex-1 overflow-y-auto p-2 space-y-1">
-            <div class="text-gray-500">Initializing FX Chain...</div>
+        <div id="sys-log-content" class="flex-1 overflow-y-auto p-2 space-y-1 font-mono">
+            <div class="text-gray-500">System Ready. Waiting for Audio Context...</div>
         </div>
     </div>
 
@@ -162,7 +180,7 @@
                         <button id="oct-up" class="w-8 h-6 bg-gray-800 text-xs hover:bg-gray-700 rounded text-gray-400 font-bold">+</button>
                     </div>
                     
-                    <!-- WAVEFORM SELECTOR -->
+                    <!-- WAVEFORM -->
                     <button id="btn-waveform" class="ml-2 w-10 h-full bg-gray-900 border border-gray-800 rounded flex items-center justify-center flex-col text-[8px] text-gray-400 hover:border-green-500 hover:text-green-500 transition-colors">
                         <span class="text-xl font-bold leading-none mb-1">~</span>
                         <span>SAW</span>
@@ -229,7 +247,7 @@
                                 </div>
                             </div>
 
-                            <!-- ENVELOPE (NEW) -->
+                            <!-- ENVELOPE -->
                             <div class="digital-fx-box">
                                 <div class="dfx-label">ENV</div>
                                 <div class="dfx-value-container">
@@ -242,7 +260,7 @@
                                 </div>
                             </div>
 
-                            <!-- DECAY (NEW) -->
+                            <!-- DECAY -->
                             <div class="digital-fx-box">
                                 <div class="dfx-label">DEC</div>
                                 <div class="dfx-value-container">
