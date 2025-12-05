@@ -1,10 +1,13 @@
 /*
  * FX SYNTH MODULE
- * Contains Sound Coloring Engines: Filter & Distortion
+ * Centralized Sound Coloring Engines: Filter & Distortion
  */
 
 // --- 1. FILTER ENGINE (Timbre Shaping) ---
 class BassFilter {
+    /**
+     * Creates and automates a BiquadFilterNode with complex Acid envelopes
+     */
     static create(ctx, time, params, duration, slide, accent) {
         const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
@@ -59,9 +62,9 @@ class BassDistortion {
         this.input.connect(this.shaper);
         this.shaper.connect(this.output);
         
-        // Cache
+        // Cache to avoid recalculating heavy math
         this.amount = 0;
-        this.curveCache = new Map(); // Cache curves to avoid re-calculation
+        this.curveCache = new Map(); 
     }
 
     connect(destination) {
