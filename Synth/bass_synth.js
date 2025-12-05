@@ -36,7 +36,7 @@ class BassSynth {
                 // Synth output is FX Input
                 this.output = this.fxChain.input; 
             } else {
-                console.warn("BassDistortion module not loaded.");
+                console.warn("BassDistortion module not loaded. Using bypass.");
                 this.output = this.ctx.createGain();
                 this.output.connect(destinationNode);
             }
@@ -96,6 +96,7 @@ class BassSynth {
         } else {
             // Fallback if FX module missing
             filterNode = this.ctx.createBiquadFilter(); 
+            filterNode.frequency.value = this.params.cutoff;
         }
 
         // 5. Setup VCA (Volume Envelope)
