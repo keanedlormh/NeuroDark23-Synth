@@ -1,5 +1,5 @@
 /*
- * NEURODARK 23 - NATIVE CORE v25 (Fixed Mapping)
+ * NEURODARK 23 - NATIVE CORE v26 (Hotfix: Missing Tabs Logic)
  */
 
 const AppState = {
@@ -72,7 +72,7 @@ function bootstrap() {
             if(window.timeMatrix.registerTrack) window.timeMatrix.registerTrack('bass-1');
         }
 
-        renderInstrumentTabs();
+        renderInstrumentTabs(); // Ahora sí está definida abajo
         renderTrackBar();
         updateEditors();
         initPlayClock();
@@ -144,42 +144,30 @@ function addBassSynth() {
     window.logToScreen(`+Synth: ${id}`);
 }
 
-// --- SYNC & CONTROL MAPPING (CRITICAL FIXES) ---
+// --- SYNC & CONTROL MAPPING ---
 
-// 1. Update Synth State from UI
 function updateSynthParam(param, value) {
     const s = bassSynths.find(sy => sy.id === AppState.activeView);
     if(!s) return;
 
-    // Normalizamos todo a escala interna del Synth (generalmente 0-100)
     let finalValue = value;
 
     if (param === 'cutoff') {
-        // El slider analógico envía 100-5000 Hz.
-        // El motor FX espera 0-100.
-        // Convertimos Hz -> 0-100
         const minHz = 100;
         const maxHz = 5000;
-        // Clamp
         const clamped = Math.max(minHz, Math.min(maxHz, value));
-        // Map linear (slider) to percentage
         finalValue = ((clamped - minHz) / (maxHz - minHz)) * 100;
-    } 
-    // Resonance (0-20), Distortion (0-100), Env (0-100), Decay (0-100) pasan directo
-    // o se ajustan si es necesario.
+    }
     
-    // Apply to Synth
     if(param === 'distortion') s.setDistortion(finalValue);
     if(param === 'cutoff') s.setCutoff(finalValue);
     if(param === 'resonance') s.setResonance(finalValue);
     if(param === 'envMod') s.setEnvMod(finalValue);
     if(param === 'decay') s.setDecay(finalValue);
 
-    // Update UI (Digital displays & Sliders)
     syncControlsFromSynth(AppState.activeView);
 }
 
-// 2. Update UI from Synth State
 function syncControlsFromSynth(viewId) {
     const s = bassSynths.find(sy => sy.id === viewId);
     if(!s) return;
@@ -189,28 +177,24 @@ function syncControlsFromSynth(viewId) {
         if(el) el.value = Math.round(val);
     };
 
-    // Params from Synth are stored in 0-100 scale (mostly)
     const p = s.params;
 
-    // --- ANALOG SLIDERS ---
+    // Analog
     setVal('dist-slider', p.distortion);
     setVal('res-slider', p.resonance);
     setVal('env-slider', p.envMod);
     setVal('dec-slider', p.decay);
     
-    // Convert Cutoff 0-100 back to Hz for the Analog Slider
     const cutoffHz = ((p.cutoff / 100) * 4900) + 100;
     setVal('cutoff-slider', cutoffHz);
 
-    // --- DIGITAL INPUTS ---
-    // These display 0-100 values directly
+    // Digital
     setVal('dist-digital', p.distortion);
-    setVal('cutoff-digital', p.cutoff); // Show %
-    setVal('res-digital', p.resonance * 5); // Show % (0-20 scale -> 0-100%)
+    setVal('cutoff-digital', p.cutoff);
+    setVal('res-digital', p.resonance * 5); 
     setVal('env-digital', p.envMod);
     setVal('dec-digital', p.decay);
 
-    // Waveform Button
     const wvBtn = document.getElementById('btn-waveform');
     if(wvBtn) {
         if(p.waveform === 'square') wvBtn.innerHTML = '<span class="text-xl font-bold leading-none mb-0.5">Π</span><span>SQR</span>';
@@ -233,7 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
     safeClick('btn-minimize-panel', (e) => { e.stopPropagation(); togglePanelState(); });
     safeClick('panel-header-trigger', togglePanelState);
 
-    // Log Logic
     const logPanel = document.getElementById('sys-log-panel');
     const logBtn = document.getElementById('btn-toggle-log-internal');
     if(logBtn) logBtn.onclick = () => {
@@ -248,44 +231,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     safeClick('btn-waveform', toggleWaveform);
 
-    // ANALOG SLIDERS BINDING
     const bindSlider = (id, param) => {
         const el = document.getElementById(id);
         if(el) el.oninput = (e) => updateSynthParam(param, parseInt(e.target.value));
     };
     bindSlider('dist-slider', 'distortion');
-    bindSlider('cutoff-slider', 'cutoff'); // Sends Hz (100-5000)
+    bindSlider('cutoff-slider', 'cutoff'); 
     bindSlider('res-slider', 'resonance');
     bindSlider('env-slider', 'envMod');
     bindSlider('dec-slider', 'decay');
 
-    // DIGITAL INPUTS BINDING (Manual Typing)
     const bindDigitalInput = (id, param) => {
         const el = document.getElementById(id);
         if(el) {
             el.onchange = (e) => {
                 let val = parseInt(e.target.value);
                 if(isNaN(val)) val = 0;
-                val = Math.max(0, Math.min(100, val)); // Clamp 0-100
+                val = Math.max(0, Math.min(100, val)); 
                 
-                // Special mapping for Resonance (0-100% UI -> 0-20 Engine)
                 if (param === 'resonance') {
-                    // We call the synth setter directly to avoid the updateSynthParam logic 
-                    // which assumes analog slider inputs for some fields.
                     const s = bassSynths.find(sy => sy.id === AppState.activeView);
                     if(s) s.setResonance(val / 5);
                     syncControlsFromSynth(AppState.activeView);
                 }
                 else if (param === 'cutoff') {
-                    // Digital input is already 0-100.
-                    // But updateSynthParam expects Hz for 'cutoff' logic.
-                    // So we inject directly to synth to bypass the Hz conversion logic.
                     const s = bassSynths.find(sy => sy.id === AppState.activeView);
                     if(s) s.setCutoff(val);
                     syncControlsFromSynth(AppState.activeView);
                 } 
                 else {
-                    // Others are 1:1
                     const s = bassSynths.find(sy => sy.id === AppState.activeView);
                     if (param === 'distortion') s.setDistortion(val);
                     if (param === 'envMod') s.setEnvMod(val);
@@ -301,7 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
     bindDigitalInput('env-digital', 'envMod');
     bindDigitalInput('dec-digital', 'decay');
 
-    // OTHER BINDINGS
     window.addEventListener('stepSelect', (e) => { AppState.selectedStep = e.detail.index; updateEditors(); });
     
     document.querySelectorAll('.piano-key').forEach(k => {
@@ -369,6 +342,36 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- RENDERERS ---
+
+// Esta es la función que faltaba
+function renderInstrumentTabs() {
+    const c = document.getElementById('instrument-tabs-container');
+    if(!c) return;
+    c.innerHTML = '';
+    bassSynths.forEach(s => {
+        const b = document.createElement('button');
+        const active = AppState.activeView === s.id;
+        b.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${active ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
+        b.innerText = s.id;
+        b.onclick = () => setTab(s.id);
+        c.appendChild(b);
+    });
+    const d = document.createElement('button');
+    const dActive = AppState.activeView === 'drum';
+    d.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${dActive ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
+    d.innerText = "DRUMS";
+    d.onclick = () => setTab('drum');
+    c.appendChild(d);
+}
+
+// Y esta es la función setTab que también es necesaria
+function setTab(v) {
+    AppState.activeView = v;
+    renderInstrumentTabs();
+    updateEditors();
+    syncControlsFromSynth(v);
+}
+
 function setupDigitalRepeaters() {
     const buttons = document.querySelectorAll('.dfx-btn');
     if(!buttons.length) return;
@@ -383,16 +386,14 @@ function setupDigitalRepeaters() {
             if(!s) return;
             
             let current = 0;
-            // Get Current Value in 0-100 scale
             if(target === 'distortion') current = s.params.distortion;
             else if(target === 'envMod') current = s.params.envMod;
             else if(target === 'decay') current = s.params.decay;
             else if(target === 'resonance') current = s.params.resonance * 5; 
-            else if(target === 'cutoff') current = s.params.cutoff; // Already 0-100 in synth
+            else if(target === 'cutoff') current = s.params.cutoff; 
 
             let next = Math.max(0, Math.min(100, current + dir));
             
-            // Set value back (mapping handled inside setters or here)
             if(target === 'distortion') s.setDistortion(next);
             else if(target === 'envMod') s.setEnvMod(next);
             else if(target === 'decay') s.setDecay(next);
