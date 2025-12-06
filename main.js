@@ -1,5 +1,5 @@
 /*
- * NEURODARK 23 - NATIVE CORE v30 (Stable & Complete)
+ * NEURODARK 23 - NATIVE CORE v31 (Worker Path Fix)
  */
 
 const AppState = {
@@ -30,7 +30,6 @@ let drawFrameId = null;
 let lastDrawnStep = -1;
 
 // --- GLOBAL UTILS ---
-// Estas funciones deben estar disponibles globalmente para el HTML onclick
 window.toggleMenu = function() {
     const m = document.getElementById('main-menu');
     if(m) { m.classList.toggle('hidden'); m.classList.toggle('flex'); }
@@ -81,7 +80,6 @@ function bootstrap() {
         initPlayClock(); 
         setupDigitalRepeaters();
         
-        // Initial Sync
         syncControlsFromSynth('bass-1');
         
         window.logToScreen("Engine Ready [OK]");
@@ -116,12 +114,23 @@ function initEngine() {
             bassSynths.forEach(s => s.init(audioCtx, masterGain));
             if(window.drumSynth) window.drumSynth.init(audioCtx, masterGain);
 
+            // CLOCK WORKER SETUP (CRITICAL FIX)
             if(!clockWorker) {
                 try {
-                    clockWorker = new Worker('clock_worker.js'); // Asegúrate que esta ruta es correcta en tu servidor
-                    clockWorker.onmessage = (e) => { if(e.data === "tick") scheduler(); };
+                    // RESTORED PATH: Synth/clock_worker.js
+                    clockWorker = new Worker('Synth/clock_worker.js'); 
+                    
+                    clockWorker.onmessage = (e) => { 
+                        if(e.data === "tick") scheduler(); 
+                    };
+                    clockWorker.onerror = (e) => {
+                        window.logToScreen("WORKER FAIL: Check File Path", 'error');
+                    };
                     clockWorker.postMessage({interval: INTERVAL});
-                } catch(e) { console.warn("Worker Err:", e); }
+                    window.logToScreen("Clock Worker: OK");
+                } catch(e) { 
+                    window.logToScreen("Worker Init Err: " + e, 'error'); 
+                }
             }
         }
         if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -212,6 +221,7 @@ function scheduleNote(step, block, time) {
 }
 
 function scheduler() {
+    // Lookahead: 100ms
     while(nextNoteTime < audioCtx.currentTime + LOOKAHEAD) {
         scheduleNote(AppState.currentPlayStep, AppState.currentPlayBlock, nextNoteTime);
         nextNote();
@@ -220,26 +230,39 @@ function scheduler() {
 
 function drawLoop() {
     const t = audioCtx.currentTime;
+    
+    // Procesar la cola visual
     while(visualQueue.length && visualQueue[0].time <= t) {
         const ev = visualQueue.shift();
-        if(ev.step === 0) renderTrackBar();
+        
         if(lastDrawnStep !== ev.step) {
             updatePlayClock(ev.step);
+            
+            // Cambio de bloque (seguimiento)
             if(AppState.followPlayback && ev.block !== AppState.editingBlock) {
                 AppState.editingBlock = ev.block;
                 updateEditors();
                 renderTrackBar();
             }
+            
+            // Resaltar paso en matriz
             if(ev.block === AppState.editingBlock) {
                 window.timeMatrix.highlightPlayingStep(ev.step);
                 if(ev.step % 4 === 0) blinkLed();
             } else {
                 window.timeMatrix.highlightPlayingStep(-1);
             }
+            
+            // Actualizar barra de progreso de bloques
+            if(ev.step === 0) renderTrackBar();
+            
             lastDrawnStep = ev.step;
         }
     }
-    if(AppState.isPlaying) requestAnimationFrame(drawLoop);
+    
+    if(AppState.isPlaying) {
+        drawFrameId = requestAnimationFrame(drawLoop);
+    }
 }
 
 function blinkLed() {
@@ -249,6 +272,39 @@ function blinkLed() {
         led.style.boxShadow = '0 0 8px #fff';
         setTimeout(() => { led.style.backgroundColor = ''; led.style.boxShadow = ''; }, 50);
     }
+}
+
+function toggleTransport() { 
+    initEngine(); 
+    AppState.isPlaying = !AppState.isPlaying; 
+    const btn = document.getElementById('btn-play'); 
+    
+    if(AppState.isPlaying) { 
+        btn.innerHTML = "&#10074;&#10074;"; 
+        btn.classList.add('border-green-500', 'text-green-500'); 
+        
+        // Reset counters
+        AppState.currentPlayStep = 0; 
+        AppState.currentPlayBlock = AppState.editingBlock; 
+        nextNoteTime = audioCtx.currentTime + 0.05; 
+        visualQueue = []; 
+        lastDrawnStep = -1;
+
+        if(clockWorker) clockWorker.postMessage("start"); 
+        drawLoop(); 
+        window.logToScreen("PLAY"); 
+    } else { 
+        btn.innerHTML = "&#9658;"; 
+        btn.classList.remove('border-green-500', 'text-green-500'); 
+        
+        if(clockWorker) clockWorker.postMessage("stop"); 
+        if(drawFrameId) cancelAnimationFrame(drawFrameId);
+        
+        window.timeMatrix.highlightPlayingStep(-1); 
+        updatePlayClock(-1); 
+        renderTrackBar(); 
+        window.logToScreen("STOP"); 
+    } 
 }
 
 // --- SYNC & CONTROL MAPPING ---
@@ -303,7 +359,6 @@ function syncControlsFromSynth(viewId) {
     setVal('env-digital', p.envMod);
     setVal('dec-digital', p.decay);
 
-    // Waveform Button
     const wvBtn = document.getElementById('btn-waveform');
     if(wvBtn) {
         if(p.waveform === 'square') wvBtn.innerHTML = '<span class="text-xl font-bold leading-none mb-0.5">Π</span><span>SQR</span>';
@@ -338,6 +393,33 @@ function setTab(v) {
     renderInstrumentTabs();
     updateEditors();
     syncControlsFromSynth(v);
+}
+
+function renderTrackBar() { const c = document.getElementById('track-bar'); if(!c) return; c.innerHTML = ''; const blocks = window.timeMatrix.blocks; document.getElementById('display-total-blocks').innerText = blocks.length; document.getElementById('display-current-block').innerText = AppState.editingBlock + 1; blocks.forEach((_, i) => { const el = document.createElement('div'); el.className = `track-block ${i===AppState.editingBlock ? 'track-block-editing' : ''} ${AppState.isPlaying && i===AppState.currentPlayBlock ? 'track-block-playing' : ''}`; el.innerText = i + 1; el.onclick = () => { AppState.editingBlock = i; updateEditors(); renderTrackBar(); }; c.appendChild(el); }); }
+function updateEditors() { const bEd = document.getElementById('editor-bass'); const dEd = document.getElementById('editor-drum'); const info = document.getElementById('step-info-display'); if(info) info.innerText = `STEP ${AppState.selectedStep+1} // ${AppState.activeView.toUpperCase()}`; if(AppState.activeView === 'drum') { bEd.classList.add('hidden'); dEd.classList.remove('hidden'); renderDrumRows(); } else { bEd.classList.remove('hidden'); dEd.classList.add('hidden'); } const slideBtn = document.getElementById('btn-toggle-slide'); const accBtn = document.getElementById('btn-toggle-accent'); if(slideBtn) slideBtn.classList.remove('text-green-400', 'border-green-600'); if(accBtn) accBtn.classList.remove('text-green-400', 'border-green-600'); if(AppState.activeView !== 'drum') { const blk = window.timeMatrix.blocks[AppState.editingBlock]; const noteData = blk.tracks[AppState.activeView] ? blk.tracks[AppState.activeView][AppState.selectedStep] : null; if(noteData) { if(noteData.slide && slideBtn) slideBtn.classList.add('text-green-400', 'border-green-600'); if(noteData.accent && accBtn) accBtn.classList.add('text-green-400', 'border-green-600'); } } window.timeMatrix.selectedStep = AppState.selectedStep; window.timeMatrix.render(AppState.activeView, AppState.editingBlock); }
+function renderDrumRows() { const c = document.getElementById('editor-drum'); if(!c) return; c.innerHTML = ''; const blk = window.timeMatrix.blocks[AppState.editingBlock]; const cur = blk.drums[AppState.selectedStep]; const kits = (window.drumSynth && window.drumSynth.kits) ? window.drumSynth.kits : []; kits.forEach(k => { const act = cur.includes(k.id); const b = document.createElement('button'); b.className = `w-full py-2 px-3 mb-1 border flex justify-between items-center text-[10px] ${act ? 'bg-gray-900 border-green-700 text-green-400' : 'bg-transparent border-gray-800 text-gray-500'}`; b.innerHTML = `<span>${k.name}</span><div class="w-2 h-2 rounded-full" style="background:${k.color}"></div>`; b.onclick = () => { initEngine(); if(act) cur.splice(cur.indexOf(k.id), 1); else { cur.push(k.id); window.drumSynth.play(k.id, audioCtx.currentTime); } updateEditors(); }; c.appendChild(b); }); }
+function renderSynthMenu() { const c = document.getElementById('synth-list-container'); if(!c) return; c.innerHTML = ''; bassSynths.forEach(s => { const r = document.createElement('div'); r.className = 'flex justify-between bg-black p-2 border border-gray-800 text-xs'; r.innerHTML = `<span class="text-green-500">${s.id}</span><button class="text-red-500" onclick="removeBassSynth('${s.id}')">X</button>`; c.appendChild(r); }); }
+function togglePanelState() { AppState.panelCollapsed = !AppState.panelCollapsed; const p = document.getElementById('editor-panel'); const btn = document.getElementById('btn-minimize-panel'); if(AppState.panelCollapsed) { p.classList.remove('panel-expanded'); p.classList.add('panel-collapsed'); btn.innerHTML = "&#9650;"; } else { p.classList.remove('panel-collapsed'); p.classList.add('panel-expanded'); btn.innerHTML = "&#9660;"; } }
+function toggleVisualizerMode() { AppState.followPlayback = !AppState.followPlayback; const btn = document.getElementById('btn-toggle-visualizer'); if(AppState.followPlayback) { btn.innerText = "VISUALIZER: ON"; btn.classList.remove('border-gray-700', 'text-gray-400'); btn.classList.add('border-green-500', 'text-green-400', 'bg-green-900/20'); } else { btn.innerText = "VISUALIZER: OFF"; btn.classList.remove('border-green-500', 'text-green-400', 'bg-green-900/20'); btn.classList.add('border-gray-700', 'text-gray-400'); } }
+
+function toggleUIMode() { 
+    AppState.uiMode = AppState.uiMode === 'analog' ? 'digital' : 'analog'; 
+    const btn = document.getElementById('btn-toggle-ui-mode'); 
+    const analogP = document.getElementById('fx-controls-analog'); 
+    const digitalP = document.getElementById('fx-controls-digital'); 
+    
+    if(AppState.uiMode === 'digital') { 
+        btn.innerText = "UI MODE: DIGITAL"; 
+        btn.classList.add('border-green-500', 'text-green-300'); 
+        analogP.classList.add('hidden'); 
+        digitalP.classList.remove('hidden'); 
+    } else { 
+        btn.innerText = "UI MODE: ANALOG"; 
+        btn.classList.remove('border-green-500', 'text-green-300'); 
+        analogP.classList.remove('hidden'); 
+        digitalP.classList.add('hidden'); 
+    } 
+    syncControlsFromSynth(AppState.activeView); 
 }
 
 function setupDigitalRepeaters() {
@@ -391,68 +473,6 @@ function setupDigitalRepeaters() {
     });
 }
 
-function toggleWaveform() {
-    const s = bassSynths.find(sy => sy.id === AppState.activeView);
-    if(s) {
-        const next = s.params.waveform === 'sawtooth' ? 'square' : 'sawtooth';
-        s.setWaveform(next);
-        syncControlsFromSynth(AppState.activeView);
-    }
-}
-
-function renderTrackBar() { const c = document.getElementById('track-bar'); if(!c) return; c.innerHTML = ''; const blocks = window.timeMatrix.blocks; document.getElementById('display-total-blocks').innerText = blocks.length; document.getElementById('display-current-block').innerText = AppState.editingBlock + 1; blocks.forEach((_, i) => { const el = document.createElement('div'); el.className = `track-block ${i===AppState.editingBlock ? 'track-block-editing' : ''} ${AppState.isPlaying && i===AppState.currentPlayBlock ? 'track-block-playing' : ''}`; el.innerText = i + 1; el.onclick = () => { AppState.editingBlock = i; updateEditors(); renderTrackBar(); }; c.appendChild(el); }); }
-function updateEditors() { const bEd = document.getElementById('editor-bass'); const dEd = document.getElementById('editor-drum'); const info = document.getElementById('step-info-display'); if(info) info.innerText = `STEP ${AppState.selectedStep+1} // ${AppState.activeView.toUpperCase()}`; if(AppState.activeView === 'drum') { bEd.classList.add('hidden'); dEd.classList.remove('hidden'); renderDrumRows(); } else { bEd.classList.remove('hidden'); dEd.classList.add('hidden'); } const slideBtn = document.getElementById('btn-toggle-slide'); const accBtn = document.getElementById('btn-toggle-accent'); if(slideBtn) slideBtn.classList.remove('text-green-400', 'border-green-600'); if(accBtn) accBtn.classList.remove('text-green-400', 'border-green-600'); if(AppState.activeView !== 'drum') { const blk = window.timeMatrix.blocks[AppState.editingBlock]; const noteData = blk.tracks[AppState.activeView] ? blk.tracks[AppState.activeView][AppState.selectedStep] : null; if(noteData) { if(noteData.slide && slideBtn) slideBtn.classList.add('text-green-400', 'border-green-600'); if(noteData.accent && accBtn) accBtn.classList.add('text-green-400', 'border-green-600'); } } window.timeMatrix.selectedStep = AppState.selectedStep; window.timeMatrix.render(AppState.activeView, AppState.editingBlock); }
-function renderDrumRows() { const c = document.getElementById('editor-drum'); if(!c) return; c.innerHTML = ''; const blk = window.timeMatrix.blocks[AppState.editingBlock]; const cur = blk.drums[AppState.selectedStep]; const kits = (window.drumSynth && window.drumSynth.kits) ? window.drumSynth.kits : []; kits.forEach(k => { const act = cur.includes(k.id); const b = document.createElement('button'); b.className = `w-full py-2 px-3 mb-1 border flex justify-between items-center text-[10px] ${act ? 'bg-gray-900 border-green-700 text-green-400' : 'bg-transparent border-gray-800 text-gray-500'}`; b.innerHTML = `<span>${k.name}</span><div class="w-2 h-2 rounded-full" style="background:${k.color}"></div>`; b.onclick = () => { initEngine(); if(act) cur.splice(cur.indexOf(k.id), 1); else { cur.push(k.id); window.drumSynth.play(k.id, audioCtx.currentTime); } updateEditors(); }; c.appendChild(b); }); }
-function renderSynthMenu() { const c = document.getElementById('synth-list-container'); if(!c) return; c.innerHTML = ''; bassSynths.forEach(s => { const r = document.createElement('div'); r.className = 'flex justify-between bg-black p-2 border border-gray-800 text-xs'; r.innerHTML = `<span class="text-green-500">${s.id}</span><button class="text-red-500" onclick="removeBassSynth('${s.id}')">X</button>`; c.appendChild(r); }); }
-function togglePanelState() { AppState.panelCollapsed = !AppState.panelCollapsed; const p = document.getElementById('editor-panel'); const btn = document.getElementById('btn-minimize-panel'); if(AppState.panelCollapsed) { p.classList.remove('panel-expanded'); p.classList.add('panel-collapsed'); btn.innerHTML = "&#9650;"; } else { p.classList.remove('panel-collapsed'); p.classList.add('panel-expanded'); btn.innerHTML = "&#9660;"; } }
-function toggleVisualizerMode() { AppState.followPlayback = !AppState.followPlayback; const btn = document.getElementById('btn-toggle-visualizer'); if(AppState.followPlayback) { btn.innerText = "VISUALIZER: ON"; btn.classList.remove('border-gray-700', 'text-gray-400'); btn.classList.add('border-green-500', 'text-green-400', 'bg-green-900/20'); } else { btn.innerText = "VISUALIZER: OFF"; btn.classList.remove('border-green-500', 'text-green-400', 'bg-green-900/20'); btn.classList.add('border-gray-700', 'text-gray-400'); } }
-
-function toggleUIMode() { 
-    AppState.uiMode = AppState.uiMode === 'analog' ? 'digital' : 'analog'; 
-    const btn = document.getElementById('btn-toggle-ui-mode'); 
-    const analogP = document.getElementById('fx-controls-analog'); 
-    const digitalP = document.getElementById('fx-controls-digital'); 
-    
-    if(AppState.uiMode === 'digital') { 
-        btn.innerText = "UI MODE: DIGITAL"; 
-        btn.classList.add('border-green-500', 'text-green-300'); 
-        analogP.classList.add('hidden'); 
-        digitalP.classList.remove('hidden'); 
-    } else { 
-        btn.innerText = "UI MODE: ANALOG"; 
-        btn.classList.remove('border-green-500', 'text-green-300'); 
-        analogP.classList.remove('hidden'); 
-        digitalP.classList.add('hidden'); 
-    } 
-    syncControlsFromSynth(AppState.activeView); 
-}
-
-function toggleTransport() { 
-    initEngine(); 
-    AppState.isPlaying = !AppState.isPlaying; 
-    const btn = document.getElementById('btn-play'); 
-    if(AppState.isPlaying) { 
-        btn.innerHTML = "&#10074;&#10074;"; 
-        btn.classList.add('border-green-500', 'text-green-500'); 
-        AppState.currentPlayStep = 0; 
-        AppState.currentPlayBlock = AppState.editingBlock; 
-        nextNoteTime = audioCtx.currentTime + 0.05; 
-        visualQueue = []; 
-        if(clockWorker) clockWorker.postMessage("start"); 
-        drawLoop(); 
-        window.logToScreen("PLAY"); 
-    } else { 
-        btn.innerHTML = "&#9658;"; 
-        btn.classList.remove('border-green-500', 'text-green-500'); 
-        if(clockWorker) clockWorker.postMessage("stop"); 
-        cancelAnimationFrame(drawFrameId); 
-        window.timeMatrix.highlightPlayingStep(-1); 
-        updatePlayClock(-1); 
-        renderTrackBar(); 
-        window.logToScreen("STOP"); 
-    } 
-}
-
 // --- EXPORT RENDER LOGIC ---
 async function renderAudio() {
     if(AppState.isPlaying) toggleTransport();
@@ -478,6 +498,7 @@ async function renderAudio() {
         bassSynths.forEach(ls => {
             const s = new window.BassSynth(ls.id);
             s.init(offCtx, offMaster);
+            // Params are already normalized 0-100 in the live synth params
             s.setDistortion(ls.params.distortion);
             s.setCutoff(ls.params.cutoff);
             s.setResonance(ls.params.resonance);
