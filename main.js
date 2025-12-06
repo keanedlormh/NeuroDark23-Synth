@@ -1,5 +1,5 @@
 /*
- * NEURODARK 23 - MAIN CONTROLLER v35 (Strict Namespace)
+ * NEURODARK 23 - MAIN CONTROLLER v35
  */
 
 window.AppState = {
@@ -16,10 +16,9 @@ window.AppState = {
     followPlayback: false
 };
 
-// Global Controller Namespace (para llamadas desde HTML)
 window.Main = {
     togglePlay: function() {
-        window.AudioEngine.init(); // Asegurar contexto
+        window.AudioEngine.init();
         window.AppState.isPlaying = !window.AppState.isPlaying;
         
         const btn = document.getElementById('btn-play');
@@ -28,7 +27,6 @@ window.Main = {
             btn.innerHTML = "&#10074;&#10074;";
             btn.classList.add('border-green-500', 'text-green-500');
             
-            // Reset lógica
             window.AppState.currentPlayStep = 0;
             window.AppState.currentPlayBlock = window.AppState.editingBlock;
             window.AudioEngine.nextNoteTime = window.AudioEngine.ctx.currentTime + 0.05;
@@ -43,29 +41,19 @@ window.Main = {
             btn.classList.remove('border-green-500', 'text-green-500');
             
             window.AudioEngine.stop();
-            // Reset Visual
             window.timeMatrix.highlightPlayingStep(-1);
             window.UI.updateClockUI(-1);
         }
-    },
-
-    addBass: function() {
-        const id = `bass-${window.AudioEngine.synths.length + 1}`;
-        window.AudioEngine.addSynth(id);
-        window.timeMatrix.registerTrack(id);
-        window.AppState.activeView = id;
-        window.UI.renderAll();
     }
 };
 
-// Boot Sequence
 document.addEventListener('DOMContentLoaded', () => {
     console.log("[Boot] Initializing...");
     
-    // 1. Init Audio Engine (State only, context waits for click)
-    window.AudioEngine.init(); // Carga sintes iniciales
+    // 1. Audio Engine Init (State only)
+    window.AudioEngine.init(); 
     
-    // 2. Init UI
+    // 2. UI Init
     window.UI.init();
     
     // 3. Global Unlocks
@@ -78,7 +66,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.addEventListener('click', unlock);
     document.addEventListener('touchstart', unlock);
-
-    // Helpers Globales para HTML onlick
-    window.addBassSynth = window.Main.addBass;
+    
+    // Helpers Globales para el HTML
+    window.addBassSynth = function() {
+        const id = `bass-${window.AudioEngine.synths.length + 1}`;
+        window.AudioEngine.addSynth(id);
+        window.timeMatrix.registerTrack(id);
+        window.setTab(id);
+    };
+    
+    window.setTab = (id) => {
+        window.AppState.activeView = id;
+        window.UI.renderAll();
+    };
 });
