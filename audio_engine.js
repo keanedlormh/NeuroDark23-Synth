@@ -1,5 +1,5 @@
 /*
- * AUDIO ENGINE MODULE v37
+ * AUDIO ENGINE MODULE
  * Namespace: window.AudioEngine
  */
 
@@ -10,20 +10,18 @@ window.AudioEngine = {
     synths: [],
     drums: null,
     nextNoteTime: 0.0,
-    lookahead: 0.15, // Ventana más grande para estabilidad
+    lookahead: 0.15,
     interval: 25,
     
-    // Paso 1: Crear datos (sin contexto de audio aún)
+    // Inicialización de Datos (antes del click)
     initData: function() {
         if(this.synths.length === 0) {
             this.addSynth('bass-1');
-            // Registrar track en matriz
-            if(window.timeMatrix) window.timeMatrix.registerTrack('bass-1');
         }
     },
 
-    // Paso 2: Arrancar Audio (User Gesture)
-    startContext: function() {
+    // Inicialización de Audio (después del click)
+    init: function() {
         if (this.ctx && this.ctx.state === 'running') return;
 
         try {
@@ -48,15 +46,15 @@ window.AudioEngine = {
                     this.drums.init(this.ctx, this.master);
                 }
 
-                // Bass Synths exist, just connect them
+                // Bass Synths
                 this.synths.forEach(s => s.init(this.ctx, this.master));
 
                 this.initWorker();
-                console.log("[Audio] Context Started");
+                console.log("[Audio] Engine Started");
             }
             if (this.ctx.state === 'suspended') this.ctx.resume();
         } catch (e) {
-            console.error("[Audio] Context Error:", e);
+            console.error("[Audio] Init Error:", e);
         }
     },
 
@@ -96,9 +94,6 @@ window.AudioEngine = {
     },
 
     scheduler: function() {
-        // Solo planificar si hay contexto
-        if(!this.ctx) return;
-
         while (this.nextNoteTime < this.ctx.currentTime + this.lookahead) {
             this.scheduleNote(window.AppState.currentPlayStep, window.AppState.currentPlayBlock, this.nextNoteTime);
             this.advanceNote();
@@ -121,8 +116,9 @@ window.AudioEngine = {
     },
 
     scheduleNote: function(step, block, time) {
-        // Enviar a UI para dibujado
-        if(window.UI) window.UI.pushVisualEvent(step, block, time);
+        if(window.UI && window.UI.visualQueue) {
+            window.UI.visualQueue.push({ step, block, time });
+        }
 
         const data = window.timeMatrix.getStepData(step, block);
         if(!data) return;
@@ -142,21 +138,19 @@ window.AudioEngine = {
         }
     },
 
-    startPlayback: function() {
-        this.startContext();
-        // Reset tiempos
+    start: function() {
+        this.init();
         this.nextNoteTime = this.ctx.currentTime + 0.05;
         if(this.worker) this.worker.postMessage("start");
     },
 
-    stopPlayback: function() {
+    stop: function() {
         if(this.worker) this.worker.postMessage("stop");
     },
 
-    // --- EXPORTAR A WAV ---
+    // --- EXPORT FUNCTION ---
     renderWav: async function() {
-        // Pausar si está sonando
-        if(window.AppState.isPlaying) window.UI.toggleTransport();
+        if(window.AppState.isPlaying) window.Main.togglePlay();
         
         const btn = document.getElementById('btn-start-render');
         if(btn) { btn.innerText = "RENDERING..."; btn.disabled = true; }
@@ -180,9 +174,7 @@ window.AudioEngine = {
             this.synths.forEach(src => {
                 const s = new window.BassSynth(src.id);
                 s.init(oCtx, oMaster);
-                // Clonar params manualmente
                 s.params = JSON.parse(JSON.stringify(src.params)); 
-                // Actualizar FX interno del clon
                 if(s.fxChain) s.setDistortion(src.params.distortion); 
                 oSynths.push(s);
             });
@@ -217,14 +209,14 @@ window.AudioEngine = {
             const url = URL.createObjectURL(wav);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `NeuroDark_Render_${Date.now()}.wav`;
+            a.download = `ND23_Render_${Date.now()}.wav`;
             a.click();
             
             if(window.UI) window.UI.toggleExportModal();
 
         } catch(e) {
             console.error("Render Error", e);
-            alert("Render Failed: " + e);
+            alert("Render Failed");
         } finally {
             if(btn) { btn.innerText = "RENDER"; btn.disabled = false; }
         }
