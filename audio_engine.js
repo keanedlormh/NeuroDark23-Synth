@@ -10,10 +10,9 @@ window.AudioEngine = {
     synths: [],
     drums: null,
     nextNoteTime: 0.0,
-    lookahead: 0.1,
+    lookahead: 0.15, // Aumentado para evitar cortes
     interval: 25,
     
-    // Inicialización (Lazy Load al primer click)
     init: function() {
         if (this.ctx && this.ctx.state === 'running') return;
 
@@ -33,27 +32,23 @@ window.AudioEngine = {
                 this.master.connect(comp);
                 comp.connect(this.ctx.destination);
 
-                // Instanciar Batería
+                // Drums
                 if(typeof window.DrumSynth !== 'undefined') {
                     this.drums = new window.DrumSynth();
                     this.drums.init(this.ctx, this.master);
                 }
 
-                // Restaurar/Inicializar Sintes de Bajo
+                // Bass Synths
                 if(this.synths.length === 0) {
                     this.addSynth('bass-1');
                 } else {
                     this.synths.forEach(s => s.init(this.ctx, this.master));
                 }
 
-                // Iniciar Worker
                 this.initWorker();
-                
                 console.log("[Audio] Engine Started");
             }
-            
             if (this.ctx.state === 'suspended') this.ctx.resume();
-            
         } catch (e) {
             console.error("[Audio] Init Error:", e);
         }
@@ -74,12 +69,6 @@ window.AudioEngine = {
 
     addSynth: function(id) {
         if(this.synths.find(s => s.id === id)) return;
-        
-        if(typeof window.BassSynth === 'undefined') {
-            console.error("[Audio] BassSynth Class Missing");
-            return;
-        }
-
         const s = new window.BassSynth(id);
         if(this.ctx) s.init(this.ctx, this.master);
         this.synths.push(s);
@@ -100,7 +89,6 @@ window.AudioEngine = {
         return this.synths.find(s => s.id === id);
     },
 
-    // Secuenciador
     scheduler: function() {
         while (this.nextNoteTime < this.ctx.currentTime + this.lookahead) {
             this.scheduleNote(window.AppState.currentPlayStep, window.AppState.currentPlayBlock, this.nextNoteTime);
@@ -124,7 +112,6 @@ window.AudioEngine = {
     },
 
     scheduleNote: function(step, block, time) {
-        // Cola visual
         if(window.UI && window.UI.visualQueue) {
             window.UI.visualQueue.push({ step, block, time });
         }
@@ -132,12 +119,10 @@ window.AudioEngine = {
         const data = window.timeMatrix.getStepData(step, block);
         if(!data) return;
 
-        // Drums
         if(data.drums && this.drums) {
             data.drums.forEach(id => this.drums.play(id, time));
         }
 
-        // Bass
         if(data.tracks) {
             Object.keys(data.tracks).forEach(tid => {
                 const note = data.tracks[tid][step];
@@ -157,5 +142,109 @@ window.AudioEngine = {
 
     stop: function() {
         if(this.worker) this.worker.postMessage("stop");
+    },
+
+    // --- EXPORT FUNCTION ---
+    renderWav: async function() {
+        if(window.AppState.isPlaying) window.Main.togglePlay();
+        
+        const btn = document.getElementById('btn-start-render');
+        if(btn) { btn.innerText = "RENDERING..."; btn.disabled = true; }
+
+        try {
+            const steps = window.timeMatrix.totalSteps;
+            const blocks = window.timeMatrix.blocks.length;
+            const reps = window.AppState.exportReps;
+            const secondsPerStep = (60 / window.AppState.bpm) / 4;
+            const duration = steps * blocks * reps * secondsPerStep + 2.0;
+
+            const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+            const oCtx = new OfflineCtx(2, 44100 * duration, 44100);
+            
+            const oMaster = oCtx.createGain();
+            oMaster.gain.value = 0.6;
+            oMaster.connect(oCtx.destination);
+
+            // Clonar Sintes
+            const oSynths = [];
+            this.synths.forEach(src => {
+                const s = new window.BassSynth(src.id);
+                s.init(oCtx, oMaster);
+                s.params = JSON.parse(JSON.stringify(src.params)); // Deep copy params
+                if(s.fxChain) s.setDistortion(src.params.distortion); // Update internal FX
+                oSynths.push(s);
+            });
+
+            const oDrums = new window.DrumSynth();
+            oDrums.init(oCtx, oMaster);
+
+            let t = 0;
+            for(let r=0; r<reps; r++) {
+                for(let b=0; b<blocks; b++) {
+                    const blk = window.timeMatrix.blocks[b];
+                    for(let s=0; s<steps; s++) {
+                        // Drums
+                        if(blk.drums && blk.drums[s]) blk.drums[s].forEach(d => oDrums.play(d, t));
+                        // Bass
+                        if(blk.tracks) {
+                            Object.keys(blk.tracks).forEach(tid => {
+                                const n = blk.tracks[tid][s];
+                                if(n) {
+                                    const synth = oSynths.find(x => x.id === tid);
+                                    if(synth) synth.play(n.note, n.octave, t, 0.25, n.slide, n.accent);
+                                }
+                            });
+                        }
+                        t += secondsPerStep;
+                    }
+                }
+            }
+
+            const buffer = await oCtx.startRendering();
+            const wav = this.bufferToWav(buffer);
+            const url = URL.createObjectURL(wav);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ND23_Render_${Date.now()}.wav`;
+            a.click();
+            
+            if(window.UI) window.UI.toggleExportModal();
+
+        } catch(e) {
+            console.error("Render Error", e);
+            alert("Render Failed");
+        } finally {
+            if(btn) { btn.innerText = "RENDER"; btn.disabled = false; }
+        }
+    },
+
+    bufferToWav: function(abuffer) {
+        let numOfChan = abuffer.numberOfChannels,
+            length = abuffer.length * numOfChan * 2 + 44,
+            buffer = new ArrayBuffer(length),
+            view = new DataView(buffer),
+            channels = [], i, sample,
+            offset = 0, pos = 0;
+
+        function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+        function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+
+        setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157);
+        setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
+        setUint32(abuffer.sampleRate); setUint32(abuffer.sampleRate * 2 * numOfChan);
+        setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164);
+        setUint32(length - pos - 4);
+
+        for(i = 0; i < numOfChan; i++) channels.push(abuffer.getChannelData(i));
+
+        while(pos < length) {
+            for(i = 0; i < numOfChan; i++) {
+                sample = Math.max(-1, Math.min(1, channels[i][offset])); 
+                sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767)|0; 
+                view.setInt16(pos, sample, true); pos += 2;
+            }
+            offset++;
+        }
+        return new Blob([buffer], {type: "audio/wav"});
     }
 };
