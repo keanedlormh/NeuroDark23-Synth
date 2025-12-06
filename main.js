@@ -1,9 +1,7 @@
 /*
- * NEURODARK 23 - MAIN CONTROLLER v34
- * Central Hub: Bootstraps Engine & UI
+ * NEURODARK 23 - MAIN CONTROLLER v35 (Strict Namespace)
  */
 
-// --- GLOBAL APP STATE ---
 window.AppState = {
     isPlaying: false,
     bpm: 174,
@@ -18,127 +16,69 @@ window.AppState = {
     followPlayback: false
 };
 
-// --- BOOTSTRAP ---
-document.addEventListener('DOMContentLoaded', () => {
-    
-    // 1. Verificar dependencias críticas
-    if(!window.timeMatrix || typeof window.BassSynth === 'undefined') {
-        console.error("CRITICAL: Modules missing. Check script order.");
-        return;
-    }
-
-    // 2. Inicializar Estado de Datos
-    // Crear el primer sintetizador si no existe
-    if (window.bassSynths.length === 0) {
-        const def = new window.BassSynth('bass-1');
-        window.bassSynths.push(def);
+// Global Controller Namespace (para llamadas desde HTML)
+window.Main = {
+    togglePlay: function() {
+        window.AudioEngine.init(); // Asegurar contexto
+        window.AppState.isPlaying = !window.AppState.isPlaying;
         
-        // Registrar en matriz de tiempo
-        if(window.timeMatrix.registerTrack) {
-            window.timeMatrix.registerTrack('bass-1');
+        const btn = document.getElementById('btn-play');
+        
+        if(window.AppState.isPlaying) {
+            btn.innerHTML = "&#10074;&#10074;";
+            btn.classList.add('border-green-500', 'text-green-500');
+            
+            // Reset lógica
+            window.AppState.currentPlayStep = 0;
+            window.AppState.currentPlayBlock = window.AppState.editingBlock;
+            window.AudioEngine.nextNoteTime = window.AudioEngine.ctx.currentTime + 0.05;
+            window.UI.visualQueue = [];
+            window.UI.lastStep = -1;
+
+            window.AudioEngine.start();
+            window.UI.startLoop();
+            
+        } else {
+            btn.innerHTML = "&#9658;";
+            btn.classList.remove('border-green-500', 'text-green-500');
+            
+            window.AudioEngine.stop();
+            // Reset Visual
+            window.timeMatrix.highlightPlayingStep(-1);
+            window.UI.updateClockUI(-1);
         }
+    },
+
+    addBass: function() {
+        const id = `bass-${window.AudioEngine.synths.length + 1}`;
+        window.AudioEngine.addSynth(id);
+        window.timeMatrix.registerTrack(id);
+        window.AppState.activeView = id;
+        window.UI.renderAll();
     }
+};
 
-    // 3. Inicializar Interfaz de Usuario
-    window.renderInstrumentTabs();
-    window.renderTrackBar();
-    window.updateEditors();
-    window.initPlayClockUI();
-    window.setupControlListeners(); 
+// Boot Sequence
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("[Boot] Initializing...");
     
-    // 4. Sincronizar estado inicial
-    window.syncControlsFromSynth('bass-1');
+    // 1. Init Audio Engine (State only, context waits for click)
+    window.AudioEngine.init(); // Carga sintes iniciales
+    
+    // 2. Init UI
+    window.UI.init();
+    
+    // 3. Global Unlocks
+    const unlock = () => {
+        window.AudioEngine.init();
+        if(window.AudioEngine.ctx && window.AudioEngine.ctx.state === 'running') {
+            document.removeEventListener('click', unlock);
+            document.removeEventListener('touchstart', unlock);
+        }
+    };
+    document.addEventListener('click', unlock);
+    document.addEventListener('touchstart', unlock);
 
-    // 5. Global Unlocks (Audio Policy)
-    document.addEventListener('click', window.globalUnlock);
-    document.addEventListener('touchstart', window.globalUnlock);
-
-    console.log("[Main] System Boot Complete");
+    // Helpers Globales para HTML onlick
+    window.addBassSynth = window.Main.addBass;
 });
-
-// --- GLOBAL EVENT HANDLERS (Called from HTML) ---
-
-// Cambio de pestaña (Bass-1, Bass-2, Drums...)
-window.setTab = function(viewId) {
-    window.AppState.activeView = viewId;
-    window.renderInstrumentTabs();
-    window.updateEditors();
-    
-    if(viewId !== 'drum') {
-        window.syncControlsFromSynth(viewId);
-    }
-};
-
-// Toggle UI Mode
-window.toggleUIMode = function() {
-    window.AppState.uiMode = window.AppState.uiMode === 'analog' ? 'digital' : 'analog';
-    const btn = document.getElementById('btn-toggle-ui-mode');
-    const aPan = document.getElementById('fx-controls-analog');
-    const dPan = document.getElementById('fx-controls-digital');
-    
-    if(window.AppState.uiMode === 'digital') {
-        btn.innerText = "UI MODE: DIGITAL";
-        btn.classList.add('border-green-500');
-        aPan.classList.add('hidden');
-        dPan.classList.remove('hidden');
-    } else {
-        btn.innerText = "UI MODE: ANALOG";
-        btn.classList.remove('border-green-500');
-        aPan.classList.remove('hidden');
-        dPan.classList.add('hidden');
-    }
-};
-
-// Toggle Waveform
-window.toggleWaveform = function() {
-    const s = window.bassSynths.find(sy => sy.id === window.AppState.activeView);
-    if(s) {
-        const next = s.params.waveform === 'sawtooth' ? 'square' : 'sawtooth';
-        s.setWaveform(next);
-        window.syncControlsFromSynth(s.id);
-    }
-};
-
-// Toggle Panel Size
-window.togglePanelState = function() {
-    const p = document.getElementById('editor-panel');
-    const btn = document.getElementById('btn-minimize-panel');
-    const isCollapsed = p.classList.contains('panel-collapsed');
-    
-    if(isCollapsed) {
-        p.classList.remove('panel-collapsed');
-        p.classList.add('panel-expanded');
-        btn.innerHTML = "&#9660;";
-    } else {
-        p.classList.remove('panel-expanded');
-        p.classList.add('panel-collapsed');
-        btn.innerHTML = "&#9650;";
-    }
-};
-
-// Add New Bass
-window.addBassSynth = function() {
-    const id = `bass-${window.bassSynths.length + 1}`;
-    const s = new window.BassSynth(id);
-    
-    // Inicializar si el motor ya corre
-    if(window.audioCtx) s.init(window.audioCtx, window.masterGain);
-    
-    window.bassSynths.push(s);
-    window.timeMatrix.registerTrack(id);
-    
-    window.setTab(id);
-};
-
-// Helpers de menú
-window.renderSynthMenu = function() {
-    const c = document.getElementById('synth-list-container');
-    if(!c) return;
-    c.innerHTML = '';
-    window.bassSynths.forEach(s => {
-        const r = document.createElement('div');
-        r.className = 'flex justify-between bg-black p-2 border border-gray-800 text-xs';
-        r.innerHTML = `<span class="text-green-500">${s.id}</span><button class="text-red-500" onclick="removeBassSynth('${s.id}')">X</button>`;
-        c.appendChild(r);
-    });
-};
