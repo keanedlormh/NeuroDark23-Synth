@@ -1,5 +1,5 @@
 /*
- * USER INTERFACE MODULE v37
+ * USER INTERFACE MODULE
  * Namespace: window.UI
  */
 
@@ -22,16 +22,11 @@ window.UI = {
         this.initClockSVG();
     },
 
-    pushVisualEvent: function(step, block, time) {
-        this.visualQueue.push({step, block, time});
-    },
-
-    // --- EVENT BINDING ---
     bindGlobalEvents: function() {
         
         // 1. TRANSPORT
-        this.bindClick('btn-play', () => this.toggleTransport());
-        this.bindClick('app-logo', () => this.toggleTransport());
+        this.bindClick('btn-play', () => window.Main.togglePlay());
+        this.bindClick('app-logo', () => window.Main.togglePlay());
 
         // 2. PIANO
         document.querySelectorAll('.piano-key').forEach(k => {
@@ -48,22 +43,27 @@ window.UI = {
         this.bindClick('btn-toggle-accent', () => this.toggleModifier('accent'));
         this.bindClick('btn-delete-note', () => this.clearStep());
         
-        // 4. OCTAVE & WAVEFORM
-        this.bindClick('oct-up', () => {
+        // 4. OCTAVE
+        const octUp = document.getElementById('oct-up');
+        const octDown = document.getElementById('oct-down');
+        
+        if(octUp) octUp.onclick = () => {
             if(window.AppState.currentOctave < 6) {
                 window.AppState.currentOctave++;
                 document.getElementById('oct-display').innerText = window.AppState.currentOctave;
             }
-        });
-        this.bindClick('oct-down', () => {
+        };
+        if(octDown) octDown.onclick = () => {
             if(window.AppState.currentOctave > 1) {
                 window.AppState.currentOctave--;
                 document.getElementById('oct-display').innerText = window.AppState.currentOctave;
             }
-        });
+        };
+
+        // 5. WAVEFORM
         this.bindClick('btn-waveform', () => this.toggleWaveform());
 
-        // 5. BPM
+        // 6. BPM
         const bpmEl = document.getElementById('bpm-input');
         if(bpmEl) bpmEl.onchange = (e) => {
             let val = parseInt(e.target.value);
@@ -72,7 +72,7 @@ window.UI = {
             window.AppState.bpm = val;
         };
 
-        // 6. MENUS & PANELS
+        // 7. MENUS & PANELS
         this.bindClick('btn-open-menu', () => {
             this.renderSynthMenu();
             document.getElementById('main-menu').classList.remove('hidden');
@@ -94,8 +94,15 @@ window.UI = {
             p.classList.toggle('translate-y-0');
             logBtn.innerText = p.classList.contains('translate-y-0') ? "[ HIDE ]" : "[ SHOW ]";
         };
+        // Menu Log Button
+        this.bindClick('btn-toggle-log-menu', () => {
+            document.getElementById('sys-log-panel').classList.remove('-translate-y-full');
+            document.getElementById('sys-log-panel').classList.add('translate-y-0');
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('main-menu').classList.remove('flex');
+        });
 
-        // 7. EXPORT
+        // 8. EXPORT
         this.bindClick('btn-open-export', () => this.toggleExportModal());
         this.bindClick('btn-close-export', () => this.toggleExportModal());
         this.bindClick('btn-start-render', () => window.AudioEngine.renderWav());
@@ -108,13 +115,23 @@ window.UI = {
             };
         });
 
-        // 8. ADD SYNTH
-        this.bindClick('btn-add-synth', () => this.addBassSynth());
+        // 9. ADD SYNTH
+        this.bindClick('btn-add-synth', () => window.Main.addBass());
 
-        // 9. SLIDERS
+        // 10. MATRIX BLOCKS
+        this.bindClick('btn-add-block', () => { window.timeMatrix.addBlock(); window.AppState.editingBlock = window.timeMatrix.blocks.length-1; this.renderAll(); });
+        this.bindClick('btn-del-block', () => { if(confirm("Delete Block?")) { window.timeMatrix.removeBlock(window.AppState.editingBlock); window.AppState.editingBlock = 0; this.renderAll(); }});
+        this.bindClick('btn-mem-copy', () => { if(window.timeMatrix.copyToClipboard(window.AppState.editingBlock)) alert("Copied!"); });
+        this.bindClick('btn-mem-paste', () => { if(window.timeMatrix.pasteFromClipboard(window.AppState.editingBlock)) { window.AppState.editingBlock++; this.renderAll(); }});
+        this.bindClick('btn-move-left', () => { if(window.timeMatrix.moveBlock(window.AppState.editingBlock, -1)) { window.AppState.editingBlock--; this.renderAll(); }});
+        this.bindClick('btn-move-right', () => { if(window.timeMatrix.moveBlock(window.AppState.editingBlock, 1)) { window.AppState.editingBlock++; this.renderAll(); }});
+        this.bindClick('btn-menu-clear', () => { if(confirm("Clear?")) { window.timeMatrix.clearBlock(window.AppState.editingBlock); this.renderAll(); document.getElementById('main-menu').classList.add('hidden'); document.getElementById('main-menu').classList.remove('flex'); }});
+        this.bindClick('btn-menu-panic', () => location.reload());
+
+        // 11. SLIDERS
         this.bindSliders();
 
-        // 10. MATRIX EVENT
+        // 12. MATRIX EVENT
         window.addEventListener('stepSelect', (e) => {
             window.AppState.selectedStep = e.detail.index;
             this.updateEditor();
@@ -125,46 +142,6 @@ window.UI = {
         const el = document.getElementById(id);
         if(el) el.onclick = fn;
     },
-
-    // --- ACTIONS ---
-
-    toggleTransport: function() {
-        window.AudioEngine.startContext();
-        window.AppState.isPlaying = !window.AppState.isPlaying;
-        
-        const btn = document.getElementById('btn-play');
-        if(window.AppState.isPlaying) {
-            btn.innerHTML = "&#10074;&#10074;";
-            btn.classList.add('border-green-500', 'text-green-500');
-            
-            // Reset state
-            window.AppState.currentPlayStep = 0;
-            window.AppState.currentPlayBlock = window.AppState.editingBlock;
-            this.visualQueue = [];
-            this.lastStep = -1;
-            
-            window.AudioEngine.startPlayback();
-            this.startLoop();
-        } else {
-            btn.innerHTML = "&#9658;";
-            btn.classList.remove('border-green-500', 'text-green-500');
-            
-            window.AudioEngine.stopPlayback();
-            if(this.drawFrame) cancelAnimationFrame(this.drawFrame);
-            window.timeMatrix.highlightPlayingStep(-1);
-            this.updateClockUI(-1);
-        }
-    },
-
-    addBassSynth: function() {
-        const id = `bass-${window.AudioEngine.synths.length + 1}`;
-        window.AudioEngine.addSynth(id);
-        window.timeMatrix.registerTrack(id);
-        window.AppState.activeView = id;
-        this.renderAll();
-    },
-
-    // --- SLIDERS & CONTROLS ---
 
     bindSliders: function() {
         const update = (param, val) => {
@@ -201,7 +178,6 @@ window.UI = {
                 if(!s) return;
                 
                 let cur = 0;
-                // Get current val (normalized or not)
                 if(target === 'resonance') cur = s.params.resonance * 5; 
                 else cur = s.params[target]; 
 
@@ -292,7 +268,7 @@ window.UI = {
     // --- DOM HELPERS ---
     
     handlePianoInput: function(note) {
-        window.AudioEngine.startContext();
+        window.AudioEngine.init(); 
         const id = window.AppState.activeView;
         if(id === 'drum') return;
 
@@ -300,6 +276,7 @@ window.UI = {
         if(!blk.tracks[id]) window.timeMatrix.registerTrack(id);
 
         const current = blk.tracks[id][window.AppState.selectedStep];
+        
         blk.tracks[id][window.AppState.selectedStep] = {
             note: note,
             octave: window.AppState.currentOctave,
@@ -427,7 +404,6 @@ window.UI = {
         }
     },
 
-    // Renders visuales (Tabs, Trackbar, Drums, Clock...)
     renderTabs: function() {
         const c = document.getElementById('instrument-tabs-container');
         if(!c) return;
@@ -474,7 +450,7 @@ window.UI = {
              b.className = `w-full py-2 px-3 mb-1 border flex justify-between items-center text-[10px] ${act ? 'bg-gray-900 border-green-700 text-green-400' : 'bg-transparent border-gray-800 text-gray-500'}`;
              b.innerHTML = `<span>${k.name}</span><div class="w-2 h-2 rounded-full" style="background:${k.color}"></div>`;
              b.onclick = () => {
-                 window.AudioEngine.startContext();
+                 window.AudioEngine.init();
                  if(act) drums.splice(drums.indexOf(k.id), 1);
                  else {
                      drums.push(k.id);
