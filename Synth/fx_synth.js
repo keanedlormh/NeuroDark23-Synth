@@ -1,175 +1,135 @@
 /*
- * FX SYNTH MODULE (ACID CORE v4)
- * Architecture: Asymmetric Tube Overdrive
- * Focus: Warm harmonics, tight low-end, and screaming resonance.
+ * FX SYNTH MODULE (Integrated Channel Strip)
+ * Architecture: Cascaded Filters + Dynamic Saturation
+ * Designed for: "Liquid" Acid Bass without digital artifacts
  */
 
-// --- 1. FILTER ENGINE (Liquid 303 Style) ---
-class BassFilter {
-    static create(ctx, time, params, duration, slide, accent) {
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-
-        // --- FRECUENCIA BASE (Logarítmica Musical) ---
-        // Convertimos 0-100 a un rango de Hz útil (60Hz - 10000Hz)
-        // La curva x^2 da más control en la zona grave del slider
-        const t = params.cutoff / 100; 
-        const baseFreq = 60 + (t * t * 9000); 
-
-        // --- RESONANCIA (Q Adaptativa) ---
-        // Reducimos la Q en frecuencias altas para evitar dolor de oídos
-        // Aumentamos la Q en los acentos para el "chirrido" clásico
-        let qVal = params.resonance; // 0-20 raw
+class NeuroFX {
+    constructor(ctx) {
+        this.ctx = ctx;
         
-        if (accent) {
-            // Boost masivo de resonancia en acento (el secreto del Acid)
-            qVal = Math.min(28, qVal * 1.5 + 5); 
-        }
+        // --- 1. FILTER SECTION (12dB + 6dB Cascade = 18dBish feel) ---
+        // Usamos dos filtros en serie para lograr una pendiente más pronunciada
+        // típica de sintes acid (estilo TB-303 que es 18dB/24dB)
+        this.filter1 = this.ctx.createBiquadFilter();
+        this.filter1.type = 'lowpass';
         
-        // Compensación de agudos (si la freq es muy alta, baja la Q)
-        if (baseFreq > 5000) qVal *= 0.6;
-        
-        filter.Q.value = Math.min(30, qVal);
+        this.filter2 = this.ctx.createBiquadFilter();
+        this.filter2.type = 'lowpass'; // Suaviza la resonancia del primero
 
-        // --- ENVOLVENTE (Modulation) ---
-        const envStrength = params.envMod / 100;
-        // La envolvente abre el filtro hasta 4 octavas por encima
-        const peakFreq = Math.min(22050, baseFreq + (envStrength * 8000));
-        
-        // --- TIEMPOS (Snappy vs Slide) ---
-        const attackTime = slide ? 0.12 : 0.005; // Ataque inmediato
-        
-        // El decay es crucial. 
-        // Slide = largo (no cierra). Acento = corto (percusivo).
-        let decayTime = 0.1 + (params.decay / 100) * 0.8; // 0.1s - 0.9s
-        if (accent) decayTime = 0.18; // El acento "muerde" rápido
-        if (slide) decayTime = duration * 1.2; // Mantiene abierto
-
-        // --- AUTOMATIZACIÓN ---
-        filter.frequency.setValueAtTime(baseFreq, time);
-        filter.frequency.linearRampToValueAtTime(peakFreq, time + attackTime);
-        // Caída exponencial suave hacia la frecuencia base
-        filter.frequency.setTargetAtTime(baseFreq, time + attackTime, decayTime / 3.5);
-
-        return { node: filter, decayTime: decayTime };
-    }
-}
-
-// --- 2. DISTORTION ENGINE (The "Dirty Box") ---
-class BassDistortion {
-    constructor(audioContext) {
-        this.ctx = audioContext;
-        
-        // TOPOLOGÍA: INPUT -> PRE-FILTRO -> DRIVE -> CLIPPER -> POST-FILTRO -> OUTPUT
-        
-        this.input = this.ctx.createGain();
-        
-        // 1. TIGHTENER (Pre-Distortion EQ)
-        // Cortamos graves profundos (HighPass @ 200Hz) antes de la distorsión.
-        // Esto hace que la distorsión sea "crujiente" y no "fangosa".
-        this.preFilter = this.ctx.createBiquadFilter();
-        this.preFilter.type = 'highpass';
-        this.preFilter.frequency.value = 200; 
-        this.preFilter.Q.value = 0.5;
-
-        // 2. DRIVE STAGE
-        this.driveGain = this.ctx.createGain();
-
-        // 3. ASYMMETRIC CLIPPER
+        // --- 2. SATURATION STAGE (Warmth) ---
         this.shaper = this.ctx.createWaveShaper();
-        this.shaper.oversample = '4x'; // Obligatorio para evitar aliasing
+        this.shaper.oversample = '4x'; // Alta calidad
+        
+        // --- 3. EQ CORRECTION ---
+        // Elimina el "barro" subgrave y el "fizz" agudo post-distorsión
+        this.eqLowCut = this.ctx.createBiquadFilter();
+        this.eqLowCut.type = 'highpass';
+        this.eqLowCut.frequency.value = 120; // Limpia graves para la distorsión
+        
+        this.eqHiCut = this.ctx.createBiquadFilter();
+        this.eqHiCut.type = 'lowpass';
+        this.eqHiCut.frequency.value = 6000; // Simula gabinete/altavoz
 
-        // 4. CABINET SIMULATOR (Post-Distortion EQ)
-        // Simulamos un altavoz cortando los agudos "fizz" digitales.
-        // LowPass @ 3500Hz (típico de altavoces de bajo/guitarra)
-        this.postFilter = this.ctx.createBiquadFilter();
-        this.postFilter.type = 'lowpass';
-        this.postFilter.frequency.value = 3500; 
-        this.postFilter.Q.value = 0.7; // Un poco de pico para presencia
+        // --- 4. GAIN STAGING ---
+        this.input = this.filter1; // Entrada al primer filtro
+        this.driveGain = this.ctx.createGain(); // Empuje hacia el saturador
+        this.makeUpGain = this.ctx.createGain(); // Volumen final
 
-        // 5. OUTPUT LEVEL
-        this.output = this.ctx.createGain();
-
-        // CONEXIONES
-        this.input.connect(this.preFilter);
-        this.preFilter.connect(this.driveGain);
+        // ROUTING
+        // Osc -> Filter1 -> Filter2 -> LowCut -> Drive -> Shaper -> HiCut -> Output
+        this.filter1.connect(this.filter2);
+        this.filter2.connect(this.eqLowCut);
+        this.eqLowCut.connect(this.driveGain);
         this.driveGain.connect(this.shaper);
-        this.shaper.connect(this.postFilter);
-        this.postFilter.connect(this.output);
+        this.shaper.connect(this.eqHiCut);
+        this.eqHiCut.connect(this.makeUpGain);
+        
+        this.output = this.makeUpGain;
 
+        // Cache de curvas
         this.curveCache = new Map();
-        this.currentAmt = -1;
+        
+        // Init Defaults
+        this.setDistortion(0);
     }
 
-    connect(dest) {
-        this.output.connect(dest);
+    // --- CONTROL METHODS ---
+
+    /**
+     * Aplica la envolvente de filtro (El efecto "Wow")
+     */
+    applyFilterEnv(time, params, duration, isSlide, isAccent) {
+        // Mapeo de Frecuencia (Logarítmico)
+        // 0-100 -> 100Hz - 8000Hz
+        const cutoffNorm = params.cutoff / 100;
+        const baseFreq = 100 + (cutoffNorm * cutoffNorm) * 8000;
+
+        // Resonancia
+        // La resonancia es peligrosa digitalmente. La limitamos.
+        let q = params.resonance * 0.2; // 0-100 -> 0-20
+        if (isAccent) q += 5; // Extra "chirrido" en acento
+        
+        // Aplicamos Q al primer filtro (el que da el carácter)
+        this.filter1.Q.value = Math.min(25, q);
+        this.filter2.Q.value = 0.5; // El segundo filtro solo suaviza (Butterworth)
+
+        // Intensidad de Envolvente
+        const envAmount = params.envMod / 100;
+        const peakFreq = Math.min(22000, baseFreq + (envAmount * 10000));
+
+        // Tiempos
+        const attack = isSlide ? 0.1 : 0.005;
+        let decay = 0.1 + (params.decay / 100) * 0.5; // 0.1s - 0.6s
+        if (isAccent) decay = 0.15; // Acentos rápidos
+        if (isSlide) decay = duration; // Slide sostenido
+
+        // Automatización de ambos filtros
+        [this.filter1.frequency, this.filter2.frequency].forEach(param => {
+            param.cancelScheduledValues(time);
+            param.setValueAtTime(baseFreq, time);
+            param.linearRampToValueAtTime(peakFreq, time + attack);
+            param.setTargetAtTime(baseFreq, time + attack, decay / 3);
+        });
+        
+        return decay; // Devolvemos el tiempo de decay para sincronizar el VCA
     }
 
     setDistortion(amount) {
-        // amount: 0 - 100
-        if (this.currentAmt === amount) return;
-        this.currentAmt = amount;
-
-        if (amount <= 1) {
-            // CLEAN MODE (Bypass Real)
-            // Dejamos pasar todo el rango de frecuencias
-            this.preFilter.frequency.value = 10;
-            this.postFilter.frequency.value = 22000;
-            this.shaper.curve = null;
-            this.driveGain.gain.value = 1;
-            this.output.gain.value = 1;
-        } else {
-            // DIRTY MODE
-            
-            // 1. Activar Filtros de Color
-            this.preFilter.frequency.value = 180; // Tight bass
-            // Cuanto más distorsión, más oscuro el filtro final para esconder ruido
-            this.postFilter.frequency.value = 5000 - (amount * 35); 
-
-            // 2. Curva
-            if (!this.curveCache.has(amount)) {
-                this.curveCache.set(amount, this._makeAsymmetricCurve(amount));
-            }
-            this.shaper.curve = this.curveCache.get(amount);
-
-            // 3. Drive (Ganancia de entrada)
-            // Empujamos agresivamente: 1x a 40x
-            const drive = 1 + (amount / 2);
-            this.driveGain.gain.value = drive;
-
-            // 4. Level (Compensación de salida)
-            // Fórmula empírica para mantener volumen constante
-            this.output.gain.value = 1 / Math.pow(drive, 0.6);
+        // Generar curva si no existe
+        if (!this.curveCache.has(amount)) {
+            this.curveCache.set(amount, this._makeSaturationCurve(amount));
         }
+        this.shaper.curve = this.curveCache.get(amount);
+
+        // Drive Logic (Compensación automática de ganancia)
+        // A más distorsión, más entrada pero menos salida
+        const drive = 1 + (amount / 5); // 1x a 21x
+        
+        this.driveGain.gain.value = drive;
+        this.makeUpGain.gain.value = 1 / Math.sqrt(drive); // Mantiene volumen estable
+
+        // Ajuste de tono dinámico: A más distorsión, cerramos un poco el HiCut
+        // para evitar que suene a "arena"
+        const toneFreq = 8000 - (amount * 40); 
+        this.eqHiCut.frequency.value = Math.max(2000, toneFreq);
     }
 
-    /**
-     * Curva Asimétrica "Soft-Hard Hybrid"
-     * Imita válvulas sobrecargadas: 
-     * - Lado positivo: Clipping suave (compresión)
-     * - Lado negativo: Clipping duro (agresividad)
-     */
-    _makeAsymmetricCurve(amount) {
+    // Curva "Soft Clipper" (Musical)
+    _makeSaturationCurve(amount) {
         const n_samples = 44100;
         const curve = new Float32Array(n_samples);
-        const k = amount * 0.1; // Intensidad
-
+        const k = amount * 0.1; // Dureza suave
+        
         for (let i = 0; i < n_samples; i++) {
-            // x va de -1 a 1
             const x = (i * 2) / n_samples - 1;
-            
-            if (x > 0) {
-                // Positivo: Tanh suave (Compresión valvular)
-                curve[i] = Math.tanh(x * (1 + k)); 
-            } else {
-                // Negativo: Clipping más duro y rápido (Fuzz/Distorsión)
-                // Esto genera los armónicos pares deseados
-                curve[i] = Math.max(-1, Math.tanh(x * (1 + k * 1.5))); 
-            }
+            // Algoritmo: x / (1 + k*|x|) -> Curva asintótica suave
+            // Evita el corte duro (hard clipping)
+            if (amount === 0) curve[i] = x;
+            else curve[i] = (1 + k) * x / (1 + k * Math.abs(x));
         }
         return curve;
     }
 }
 
-window.BassFilter = BassFilter;
-window.BassDistortion = BassDistortion;
+window.NeuroFX = NeuroFX;
