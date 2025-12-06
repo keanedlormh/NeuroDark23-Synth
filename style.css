@@ -85,9 +85,52 @@ body {
     overflow: hidden !important; 
 }
 
-input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; background: var(--neon-green); border-radius: 50%; border: 2px solid #000; box-shadow: 0 0 8px var(--neon-green); }
+/* ESTILOS SLIDERS VERTICALES (MODO ANALÓGICO) */
+.analog-fader-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    flex: 1;
+}
 
-/* DIGITAL FX BOX STYLES */
+.analog-fader-box label {
+    font-size: 8px;
+    color: #555;
+    margin-top: 4px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.vertical-range {
+    -webkit-appearance: slider-vertical; /* Standard moderno para Chrome/Edge */
+    writing-mode: bt-lr; /* IE/Edge legacy */
+    width: 8px;
+    height: 100%;
+    background: transparent;
+    cursor: pointer;
+    flex: 1;
+}
+
+/* Fallback o personalización adicional para browsers que no soporten slider-vertical nativo bien */
+input[type=range].vertical-range::-webkit-slider-thumb { 
+    -webkit-appearance: none; 
+    height: 10px; 
+    width: 18px; 
+    background: var(--neon-green); 
+    border-radius: 2px; 
+    border: 1px solid #000; 
+    box-shadow: 0 0 5px var(--neon-green);
+    margin-left: -5px; /* Ajuste centro */
+}
+input[type=range].vertical-range::-webkit-slider-runnable-track {
+    background: #222;
+    border-radius: 2px;
+}
+
+
+/* ESTILOS DIGITAL FX BOX (MODO DIGITAL) */
 .digital-fx-box {
     flex: 1;
     background: #111;
