@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="style.css">
     
-    <!-- SYSTEM LOGGER (CRITICAL) -->
     <script>
         window.logToScreen = function(msg, type='info') {
             const consoleEl = document.getElementById('sys-log-content');
@@ -25,7 +24,6 @@
         // Captura de errores globales
         window.onerror = function(msg, url, line) {
             window.logToScreen(`CRITICAL: ${msg} (L${line})`, 'error');
-            // Forzar apertura del log si hay error
             const p = document.getElementById('sys-log-panel');
             if(p) { 
                 p.classList.remove('-translate-y-full'); 
@@ -34,7 +32,6 @@
             return false;
         };
 
-        // Captura de promesas fallidas
         window.addEventListener('unhandledrejection', function(event) {
             window.logToScreen(`ASYNC ERR: ${event.reason}`, 'error');
         });
@@ -42,7 +39,6 @@
 </head>
 <body class="bg-black text-gray-300 font-mono overflow-hidden fixed inset-0 select-none">
 
-    <!-- LOGS PANEL (OPEN BY DEFAULT) -->
     <div id="sys-log-panel" class="fixed top-0 left-0 w-full h-40 bg-black/95 border-b border-green-900 z-[200] transition-transform duration-300 flex flex-col font-mono text-[10px] transform translate-y-0 shadow-lg">
         <div class="bg-green-900/20 px-2 py-1 flex justify-between items-center border-b border-green-900/50">
             <span class="text-green-500 font-bold tracking-widest">:: SYSTEM_DEBUG ::</span>
@@ -56,7 +52,6 @@
         </div>
     </div>
 
-    <!-- EXPORT MODAL -->
     <div id="export-modal" class="fixed inset-0 z-[150] bg-black/95 backdrop-blur hidden flex-col items-center justify-center gap-6">
         <div class="w-80 border border-green-500 p-6 bg-gray-900 rounded shadow-[0_0_50px_rgba(0,255,0,0.2)]">
             <h2 class="text-xl text-white tracking-widest mb-4 border-b border-green-600 pb-2 text-center font-bold">RENDER WAV</h2>
@@ -74,12 +69,10 @@
         </div>
     </div>
 
-    <!-- MENU -->
     <div id="main-menu" class="fixed inset-0 z-[100] bg-black/95 backdrop-blur hidden flex-col items-center justify-center gap-4">
         <div class="w-72 border border-gray-800 p-6 bg-gray-900/90 rounded">
             <h2 class="text-xl text-white tracking-widest mb-6 border-b border-green-600 pb-2 text-center glitch-text font-bold">MENU</h2>
             
-            <!-- TOGGLES -->
             <div class="mb-4 text-center space-y-2">
                  <button id="btn-toggle-ui-mode" class="w-full py-2 border border-green-700/50 text-green-400 bg-green-900/10 hover:bg-green-900/30 text-xs font-bold tracking-widest">UI MODE: ANALOG</button>
                  <button id="btn-toggle-visualizer" class="w-full py-2 border border-gray-700 text-gray-400 bg-transparent hover:bg-green-900/10 text-xs font-bold tracking-widest">VISUALIZER: OFF</button>
@@ -100,7 +93,6 @@
         </div>
     </div>
 
-    <!-- HEADER -->
     <header class="h-14 border-b border-gray-800 flex items-center justify-between px-4 z-50 bg-black relative shadow-lg">
         <div class="flex items-center gap-3 cursor-pointer group" id="app-logo">
             <div id="activity-led" class="w-2 h-2 bg-green-900 rounded-full shadow-[0_0_5px_green]"></div>
@@ -109,11 +101,9 @@
         <button id="btn-open-menu" class="text-2xl text-green-500 hover:text-white leading-none pb-1 font-bold">&#9776;</button>
     </header>
 
-    <!-- WORKSPACE -->
     <div class="absolute top-14 bottom-0 left-0 right-0 overflow-y-auto custom-scroll pb-64">
         <div class="px-4 py-6 w-full max-w-2xl mx-auto flex flex-col gap-6">
             
-            <!-- DASHBOARD -->
             <div class="bg-[#0a0a0a] p-4 rounded-xl border border-gray-800 flex justify-between items-center gap-4 relative overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-r from-green-900/5 to-purple-900/5 pointer-events-none"></div>
                 <div class="text-center z-10">
@@ -132,7 +122,6 @@
                 </div>
             </div>
 
-            <!-- TRACK BAR -->
             <div>
                 <div class="flex justify-between items-end mb-2">
                     <span class="text-[10px] text-gray-500 tracking-widest">CHAIN</span>
@@ -150,19 +139,15 @@
                 <div id="track-bar" class="h-14 border border-gray-800 bg-[#080808] rounded flex items-center gap-1 px-2 overflow-x-auto whitespace-nowrap custom-scroll shadow-inner"></div>
             </div>
 
-            <!-- TABS -->
             <div id="instrument-tabs-container" class="flex flex-wrap gap-1"></div>
 
-            <!-- MATRIX -->
             <div id="matrix-container" class="grid gap-1.5 w-full select-none p-1 bg-black/30 rounded border border-gray-900/50"></div>
             <div class="h-10"></div> 
         </div>
     </div>
 
-    <!-- EDITOR PANEL -->
     <div id="editor-panel" class="panel-expanded fixed bottom-0 left-0 w-full bg-[#0a0a0a] border-t border-gray-800 flex flex-col z-40 transition-all duration-300 shadow-[0_-5px_30px_rgba(0,0,0,0.8)]">
         
-        <!-- HEADER PANEL -->
         <div class="h-8 bg-black flex items-center justify-between px-4 border-b border-gray-800 shrink-0 cursor-pointer" id="panel-header-trigger">
             <span id="step-info-display" class="text-[10px] text-gray-500 tracking-widest">EDIT</span>
             <button id="btn-minimize-panel" class="text-xs text-green-500 hover:text-white px-2 py-1 font-bold">
@@ -170,128 +155,118 @@
             </button>
         </div>
 
-        <!-- CONTENIDO DEL PANEL -->
         <div class="flex-1 flex flex-col overflow-hidden">
-            <div id="editor-bass" class="flex-1 p-3 flex flex-col gap-3 overflow-y-auto custom-scroll">
-                <div class="flex justify-between items-center">
-                    <div class="flex items-center gap-1 bg-gray-900 rounded p-1 border border-gray-800">
-                        <button id="oct-down" class="w-8 h-6 bg-gray-800 text-xs hover:bg-gray-700 rounded text-gray-400 font-bold">-</button>
+            
+            <div id="editor-bass" class="flex-1 p-3 flex flex-col gap-2 overflow-y-auto custom-scroll">
+                
+                <div class="flex justify-between items-center h-8 shrink-0">
+                    <div class="flex items-center gap-1 bg-gray-900 rounded p-1 border border-gray-800 h-full">
+                        <button id="oct-down" class="w-8 h-full bg-gray-800 text-xs hover:bg-gray-700 rounded text-gray-400 font-bold">-</button>
                         <span id="oct-display" class="w-8 text-center text-xs font-bold text-green-500">3</span>
-                        <button id="oct-up" class="w-8 h-6 bg-gray-800 text-xs hover:bg-gray-700 rounded text-gray-400 font-bold">+</button>
+                        <button id="oct-up" class="w-8 h-full bg-gray-800 text-xs hover:bg-gray-700 rounded text-gray-400 font-bold">+</button>
                     </div>
                     
-                    <!-- WAVEFORM -->
-                    <button id="btn-waveform" class="ml-2 w-10 h-full bg-gray-900 border border-gray-800 rounded flex items-center justify-center flex-col text-[8px] text-gray-400 hover:border-green-500 hover:text-green-500 transition-colors">
-                        <span class="text-xl font-bold leading-none mb-1">~</span>
-                        <span>SAW</span>
+                    <button id="btn-waveform" class="ml-2 w-12 h-full bg-gray-900 border border-gray-800 rounded flex items-center justify-center gap-1 text-[9px] text-gray-400 hover:border-green-500 hover:text-green-500 transition-colors">
+                        <span class="text-lg font-bold leading-none">~</span>
                     </button>
 
-                    <!-- FX CONTROLS WRAPPER -->
-                    <div class="flex-1 ml-2 relative">
-                        
-                        <!-- ANALOG MODE (5 SLIDERS) -->
-                        <div id="fx-controls-analog" class="flex gap-1 w-full transition-opacity duration-300">
-                            <!-- CUTOFF -->
-                            <div class="flex-1 bg-gray-900 p-1 rounded border border-gray-800 flex flex-col justify-center">
-                                <label class="text-[8px] text-gray-500 text-center block mb-1">CUT</label>
-                                <input type="range" id="cutoff-slider" min="100" max="5000" value="800" class="w-full h-1 bg-black rounded appearance-none cursor-pointer">
+                    <div class="w-4"></div>
+
+                    <div class="flex gap-1 h-full flex-1">
+                        <button id="btn-toggle-slide" class="flex-1 border border-gray-700 bg-gray-900/50 text-gray-500 text-[9px] tracking-widest hover:text-green-400 hover:border-green-600 transition-all font-bold rounded">~ SLIDE</button>
+                        <button id="btn-toggle-accent" class="flex-1 border border-gray-700 bg-gray-900/50 text-gray-500 text-[9px] tracking-widest hover:text-green-400 hover:border-green-600 transition-all font-bold rounded">^ ACCENT</button>
+                    </div>
+
+                    <div class="w-4"></div>
+
+                    <button id="btn-delete-note" class="px-3 h-full text-[9px] text-red-500 border border-red-900/30 hover:bg-red-900/10 rounded tracking-widest font-bold transition-colors">CLR</button>
+                </div>
+
+                <div class="flex-1 relative bg-[#050505] border border-gray-800 rounded mx-1 overflow-hidden min-h-[90px]">
+                    
+                    <div id="fx-controls-analog" class="absolute inset-0 flex items-center justify-around px-2 py-2">
+                        <div class="analog-fader-box">
+                            <input type="range" id="cutoff-slider" min="100" max="5000" value="800" class="vertical-range">
+                            <label>CUT</label>
+                        </div>
+                        <div class="analog-fader-box">
+                            <input type="range" id="res-slider" min="0" max="20" value="4" class="vertical-range">
+                            <label>RES</label>
+                        </div>
+                        <div class="analog-fader-box">
+                            <input type="range" id="env-slider" min="0" max="100" value="60" class="vertical-range">
+                            <label>ENV</label>
+                        </div>
+                        <div class="analog-fader-box">
+                            <input type="range" id="dec-slider" min="0" max="100" value="40" class="vertical-range">
+                            <label>DEC</label>
+                        </div>
+                        <div class="analog-fader-box">
+                            <input type="range" id="dist-slider" min="0" max="100" value="20" class="vertical-range">
+                            <label>DRV</label>
+                        </div>
+                    </div>
+
+                    <div id="fx-controls-digital" class="hidden absolute inset-0 bg-[#0a0a0a] flex gap-1 p-1">
+                        <div class="digital-fx-box">
+                            <div class="dfx-label">CUT</div>
+                            <div class="dfx-value-container">
+                                <input type="text" id="cutoff-digital" value="14" class="dfx-value" readonly>
+                                <span class="text-[8px] text-gray-600">%</span>
                             </div>
-                            <!-- RESONANCE -->
-                            <div class="flex-1 bg-gray-900 p-1 rounded border border-gray-800 flex flex-col justify-center">
-                                <label class="text-[8px] text-gray-500 text-center block mb-1">RES</label>
-                                <input type="range" id="res-slider" min="0" max="20" value="4" class="w-full h-1 bg-black rounded appearance-none cursor-pointer">
-                            </div>
-                            <!-- ENVELOPE MOD (NEW) -->
-                            <div class="flex-1 bg-gray-900 p-1 rounded border border-gray-800 flex flex-col justify-center">
-                                <label class="text-[8px] text-gray-500 text-center block mb-1">ENV</label>
-                                <input type="range" id="env-slider" min="0" max="100" value="60" class="w-full h-1 bg-black rounded appearance-none cursor-pointer">
-                            </div>
-                            <!-- DECAY (NEW) -->
-                            <div class="flex-1 bg-gray-900 p-1 rounded border border-gray-800 flex flex-col justify-center">
-                                <label class="text-[8px] text-gray-500 text-center block mb-1">DEC</label>
-                                <input type="range" id="dec-slider" min="0" max="100" value="40" class="w-full h-1 bg-black rounded appearance-none cursor-pointer">
-                            </div>
-                            <!-- DISTORTION -->
-                            <div class="flex-1 bg-gray-900 p-1 rounded border border-gray-800 flex flex-col justify-center">
-                                <label class="text-[8px] text-gray-500 text-center block mb-1">DRV</label>
-                                <input type="range" id="dist-slider" min="0" max="100" value="20" class="w-full h-1 bg-black rounded appearance-none cursor-pointer">
+                            <div class="dfx-buttons">
+                                <button class="dfx-btn" data-target="cutoff" data-dir="-1">-</button>
+                                <button class="dfx-btn" data-target="cutoff" data-dir="1">+</button>
                             </div>
                         </div>
-
-                        <!-- DIGITAL MODE (5 BOXES) -->
-                        <div id="fx-controls-digital" class="hidden flex gap-1 w-full absolute inset-0 bg-[#0a0a0a]">
-                            
-                            <!-- CUTOFF -->
-                            <div class="digital-fx-box">
-                                <div class="dfx-label">CUT</div>
-                                <div class="dfx-value-container">
-                                    <input type="text" id="cutoff-digital" value="14" class="dfx-value" readonly>
-                                    <span class="text-[8px] text-gray-600">%</span>
-                                </div>
-                                <div class="dfx-buttons">
-                                    <button class="dfx-btn" data-target="cutoff" data-dir="-1">-</button>
-                                    <button class="dfx-btn" data-target="cutoff" data-dir="1">+</button>
-                                </div>
+                        <div class="digital-fx-box">
+                            <div class="dfx-label">RES</div>
+                            <div class="dfx-value-container">
+                                <input type="text" id="res-digital" value="20" class="dfx-value" readonly>
+                                <span class="text-[8px] text-gray-600">%</span>
                             </div>
-
-                            <!-- RESONANCE -->
-                            <div class="digital-fx-box">
-                                <div class="dfx-label">RES</div>
-                                <div class="dfx-value-container">
-                                    <input type="text" id="res-digital" value="20" class="dfx-value" readonly>
-                                    <span class="text-[8px] text-gray-600">%</span>
-                                </div>
-                                <div class="dfx-buttons">
-                                    <button class="dfx-btn" data-target="resonance" data-dir="-1">-</button>
-                                    <button class="dfx-btn" data-target="resonance" data-dir="1">+</button>
-                                </div>
+                            <div class="dfx-buttons">
+                                <button class="dfx-btn" data-target="resonance" data-dir="-1">-</button>
+                                <button class="dfx-btn" data-target="resonance" data-dir="1">+</button>
                             </div>
-
-                            <!-- ENVELOPE -->
-                            <div class="digital-fx-box">
-                                <div class="dfx-label">ENV</div>
-                                <div class="dfx-value-container">
-                                    <input type="text" id="env-digital" value="60" class="dfx-value" readonly>
-                                    <span class="text-[8px] text-gray-600">%</span>
-                                </div>
-                                <div class="dfx-buttons">
-                                    <button class="dfx-btn" data-target="envMod" data-dir="-1">-</button>
-                                    <button class="dfx-btn" data-target="envMod" data-dir="1">+</button>
-                                </div>
+                        </div>
+                        <div class="digital-fx-box">
+                            <div class="dfx-label">ENV</div>
+                            <div class="dfx-value-container">
+                                <input type="text" id="env-digital" value="60" class="dfx-value" readonly>
+                                <span class="text-[8px] text-gray-600">%</span>
                             </div>
-
-                            <!-- DECAY -->
-                            <div class="digital-fx-box">
-                                <div class="dfx-label">DEC</div>
-                                <div class="dfx-value-container">
-                                    <input type="text" id="dec-digital" value="40" class="dfx-value" readonly>
-                                    <span class="text-[8px] text-gray-600">%</span>
-                                </div>
-                                <div class="dfx-buttons">
-                                    <button class="dfx-btn" data-target="decay" data-dir="-1">-</button>
-                                    <button class="dfx-btn" data-target="decay" data-dir="1">+</button>
-                                </div>
+                            <div class="dfx-buttons">
+                                <button class="dfx-btn" data-target="envMod" data-dir="-1">-</button>
+                                <button class="dfx-btn" data-target="envMod" data-dir="1">+</button>
                             </div>
-
-                            <!-- DRIVE -->
-                            <div class="digital-fx-box">
-                                <div class="dfx-label">DRV</div>
-                                <div class="dfx-value-container">
-                                    <input type="text" id="dist-digital" value="20" class="dfx-value" readonly>
-                                    <span class="text-[8px] text-gray-600">%</span>
-                                </div>
-                                <div class="dfx-buttons">
-                                    <button class="dfx-btn" data-target="distortion" data-dir="-1">-</button>
-                                    <button class="dfx-btn" data-target="distortion" data-dir="1">+</button>
-                                </div>
+                        </div>
+                        <div class="digital-fx-box">
+                            <div class="dfx-label">DEC</div>
+                            <div class="dfx-value-container">
+                                <input type="text" id="dec-digital" value="40" class="dfx-value" readonly>
+                                <span class="text-[8px] text-gray-600">%</span>
                             </div>
-
+                            <div class="dfx-buttons">
+                                <button class="dfx-btn" data-target="decay" data-dir="-1">-</button>
+                                <button class="dfx-btn" data-target="decay" data-dir="1">+</button>
+                            </div>
+                        </div>
+                        <div class="digital-fx-box">
+                            <div class="dfx-label">DRV</div>
+                            <div class="dfx-value-container">
+                                <input type="text" id="dist-digital" value="20" class="dfx-value" readonly>
+                                <span class="text-[8px] text-gray-600">%</span>
+                            </div>
+                            <div class="dfx-buttons">
+                                <button class="dfx-btn" data-target="distortion" data-dir="-1">-</button>
+                                <button class="dfx-btn" data-target="distortion" data-dir="1">+</button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- PIANO -->
-                <div class="grid grid-cols-7 gap-1 h-20 bg-black p-1 rounded border border-gray-800 shadow-inner select-none shrink-0">
+                <div class="grid grid-cols-7 gap-1 h-16 bg-black p-1 rounded border border-gray-800 shadow-inner select-none shrink-0">
                     <button class="piano-key white-key" data-note="C">C</button>
                     <button class="piano-key white-key" data-note="D">D</button>
                     <button class="piano-key white-key" data-note="E">E</button>
@@ -307,21 +282,12 @@
                     <button class="piano-key black-key" data-note="A#">A#</button>
                     <div class="pointer-events-none"></div>
                 </div>
-                
-                <!-- STEP MODIFIERS -->
-                <div class="flex gap-2 shrink-0">
-                    <button id="btn-toggle-slide" class="flex-1 py-1 border border-gray-700 bg-gray-900/50 text-gray-500 text-[10px] tracking-widest hover:text-green-400 hover:border-green-600 transition-all font-bold">~ SLIDE</button>
-                    <button id="btn-toggle-accent" class="flex-1 py-1 border border-gray-700 bg-gray-900/50 text-gray-500 text-[10px] tracking-widest hover:text-green-400 hover:border-green-600 transition-all font-bold">^ ACCENT</button>
-                </div>
-                
-                <button id="btn-delete-note" class="w-full py-1 text-[10px] text-red-500 border border-red-900/30 hover:bg-red-900/10 rounded tracking-widest font-bold transition-colors shrink-0">CLEAR NOTE</button>
             </div>
 
             <div id="editor-drum" class="hidden flex-1 p-2 overflow-y-auto custom-scroll"></div>
         </div>
     </div>
 
-    <!-- SCRIPT ORDER -->
     <script src="Synth/fx_synth.js"></script>
     <script src="Synth/bass_synth.js"></script>
     <script src="Synth/drum_synth.js"></script>
