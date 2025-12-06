@@ -108,9 +108,11 @@ body {
     transform: translateY(2px); /* Maintain translation with absolute pos */
 }
 
-/* PANEL ESTADOS */
+/* PANEL ESTADOS (UPDATED HEIGHT) */
 .panel-expanded { 
-    height: 300px;
+    height: 45vh;
+    min-height: 400px; /* Seguridad para pantallas muy pequeñas */
+    max-height: 80vh;
     overflow: hidden !important; 
 } 
 .panel-collapsed { 
