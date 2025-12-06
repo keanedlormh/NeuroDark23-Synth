@@ -1,6 +1,7 @@
 /*
- * BASS SYNTH MODULE (Voice Controller)
- * Orchestrates Oscillator, Filter (via FX), and VCA.
+ * BASS SYNTH MODULE (CORE VOICE)
+ * Orchestrates: Osc -> [NeuroFX Strip] -> Out
+ * Focus: Clean signal path and VCA/VCF sync
  */
 
 class BassSynth {
@@ -8,14 +9,14 @@ class BassSynth {
         this.id = id;
         this.ctx = null;
         this.output = null; 
-        this.fxChain = null; 
-        this.lastFreq = 0;
         
-        // Default Params (0-100 Scale mostly)
+        this.lastFreq = 0; // Para slide
+        
+        // Parámetros internos (0-100)
         this.params = {
             distortion: 20,
-            cutoff: 40,   // Digital scale (0-100)
-            resonance: 8, // Digital scale (0-20 effectively)
+            cutoff: 40,
+            resonance: 8,
             envMod: 60,
             decay: 40,
             waveform: 'sawtooth'
@@ -24,108 +25,104 @@ class BassSynth {
 
     init(audioContext, destinationNode) {
         this.ctx = audioContext;
-        
-        // 1. Setup FX Chain (Distortion)
-        if (typeof window.BassDistortion !== 'undefined') {
-            this.fxChain = new window.BassDistortion(this.ctx);
-            this.fxChain.setDistortion(this.params.distortion);
-            this.fxChain.connect(destinationNode);
-            this.output = this.fxChain.input; 
-        } else {
-            // Fallback si falla la carga
-            this.output = this.ctx.createGain();
-            this.output.connect(destinationNode);
-        }
+        this.output = destinationNode;
     }
 
-    // --- Params Setters ---
-    setDistortion(val) { this.params.distortion = val; if(this.fxChain) this.fxChain.setDistortion(val); }
+    // Setters (Optimizados para actualizar en tiempo real si es necesario)
+    setDistortion(val) { this.params.distortion = val; }
     setCutoff(val) { this.params.cutoff = val; }
     setResonance(val) { this.params.resonance = val; }
     setEnvMod(val) { this.params.envMod = val; }
     setDecay(val) { this.params.decay = val; }
     setWaveform(val) { this.params.waveform = val; }
 
-    // --- Play Note ---
     play(note, octave, time, duration = 0.25, slide = false, accent = false) {
-        if (!this.ctx || !this.output) return;
+        if (!this.ctx) return;
 
-        // 1. Frecuencia MIDI
+        // 1. FRECUENCIA
         const noteMap = {'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11};
         const noteIndex = noteMap[note];
         if (noteIndex === undefined) return;
         const midiNote = (octave + 1) * 12 + noteIndex;
         const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
 
-        // 2. Nodos
-        const osc = this.ctx.createOscillator();
-        const vca = this.ctx.createGain(); // Amplificador controlado por voltaje
-        
-        // 3. Oscilador
-        osc.type = this.params.waveform;
-        // Drift Analógico: Pequeña desafinación aleatoria (+/- 2 cents) para engordar el sonido
-        osc.detune.value = (Math.random() * 4) - 2; 
+        // 2. CREAR CADENA DE EFECTOS (Por Voz)
+        // Instanciamos el FX Strip para esta nota/voz
+        const fx = new window.NeuroFX(this.ctx);
+        // Configuramos el FX con los parámetros actuales
+        fx.setDistortion(this.params.distortion);
 
-        // 4. Portamento (Glide)
+        // 3. OSCILADOR
+        const osc = this.ctx.createOscillator();
+        osc.type = this.params.waveform;
+        
+        // Slide Logic
         if (!this.lastFreq) this.lastFreq = freq;
         if (slide) {
             osc.frequency.setValueAtTime(this.lastFreq, time);
-            osc.frequency.exponentialRampToValueAtTime(freq, time + 0.08); // Glide rápido (303 style)
+            osc.frequency.exponentialRampToValueAtTime(freq, time + 0.1); 
         } else {
             osc.frequency.setValueAtTime(freq, time);
         }
         this.lastFreq = freq;
 
-        // 5. Filtro (Delegado a FX Module)
-        let filterNode = null;
-        let filterDecay = 0.5;
-
-        if (typeof window.BassFilter !== 'undefined') {
-            const fResult = window.BassFilter.create(this.ctx, time, this.params, duration, slide, accent);
-            filterNode = fResult.node;
-            filterDecay = fResult.decayTime;
-        } else {
-            filterNode = this.ctx.createBiquadFilter();
-            filterNode.frequency.value = 1000; 
-        }
-
-        // 6. Envolvente de Volumen (VCA)
-        // IMPORTANTE: El volumen no debe cortar la cola de la resonancia/distorsión
-        const peakVol = accent ? 0.85 : 0.65; // Headroom para la distorsión
+        // 4. VCA (Amplificador Dinámico)
+        // IMPORTANTE: El VCA va ANTES de la distorsión en nuestra cadena lógica,
+        // pero como NeuroFX ya tiene ganancia de entrada, podemos poner el VCA
+        // entre el oscilador y el FX para que la "cola" de la nota se limpie
+        // a medida que baja el volumen.
+        const vca = this.ctx.createGain();
+        
+        // Niveles
+        const peakVol = accent ? 1.0 : 0.7; // Acento satura más
         
         vca.gain.setValueAtTime(0, time);
         
+        // Aplicar Envolvente de Filtro y obtener tiempo de decay óptimo
+        const filterDecay = fx.applyFilterEnv(time, this.params, duration, slide, accent);
+
+        // Envolvente de Volumen (VCA)
         if (slide) {
-            // Legato: No hay release, se mantiene hasta la siguiente nota
+            // Legato
             vca.gain.linearRampToValueAtTime(peakVol, time + 0.02);
-            vca.gain.setValueAtTime(peakVol, time + duration); 
-            vca.gain.linearRampToValueAtTime(0, time + duration + 0.05);
+            vca.gain.setValueAtTime(peakVol, time + duration);
+            // Salida rápida para no clickear
+            vca.gain.linearRampToValueAtTime(0, time + duration + 0.05); 
         } else {
-            // Staccato: Ataque rápido
-            vca.gain.linearRampToValueAtTime(peakVol, time + 0.005);
+            // Staccato
+            vca.gain.linearRampToValueAtTime(peakVol, time + 0.005); // Attack
             
-            // Release: Sigue al filtro pero con un mínimo para no sonar seco
-            const releaseTime = Math.max(0.18, filterDecay); 
+            // Release: Debe ser ligeramente más largo que el decay del filtro
+            // para escuchar la resonancia bajando
+            let release = Math.max(0.2, filterDecay * 1.2);
             
-            // Curva exponencial natural
-            vca.gain.setTargetAtTime(0, time + 0.04, releaseTime / 4.5);
+            // Usamos setTargetAtTime para una caída natural tipo condensador
+            vca.gain.setTargetAtTime(0, time + 0.05, release / 4);
         }
 
-        // 7. Ruta de Señal: OSC -> FILTER -> VCA -> [DISTORTION INPUT]
-        // Enviamos la señal filtrada y con volumen a la unidad de distorsión
-        osc.connect(filterNode);
-        filterNode.connect(vca);
-        vca.connect(this.output); 
+        // 5. CONEXIONES
+        // Osc -> VCA -> FX Strip -> Master Output
+        osc.connect(vca);
+        vca.connect(fx.input);
+        fx.output.connect(this.output);
 
-        // 8. Ciclo de Vida
+        // 6. START / STOP
         osc.start(time);
-        osc.stop(time + duration + 1.5); // Margen de seguridad amplio
+        
+        // Matar el oscilador con margen de seguridad
+        const stopTime = time + duration + 1.0;
+        osc.stop(stopTime);
 
+        // Garbage Collection
         osc.onended = () => {
+            // Desconectar todo para liberar memoria
             try {
                 osc.disconnect();
                 vca.disconnect();
-                filterNode.disconnect();
+                // Desconectar nodos internos del FX es complejo, 
+                // pero al desconectar la salida del FX del master,
+                // el Garbage Collector de JS debería encargarse.
+                fx.output.disconnect(); 
             } catch(e) {}
         };
     }
