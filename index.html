@@ -274,7 +274,6 @@
                         <button class="piano-key white-key flex-1" data-note="A">A</button>
                         <button class="piano-key white-key flex-1" data-note="B">B</button>
                     </div>
-                    <!-- BLACK KEYS -->
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 14.28%;" data-note="C#">C#</button>
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 28.57%;" data-note="D#">D#</button>
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 57.14%;" data-note="F#">F#</button>
@@ -290,13 +289,19 @@
     </div>
 
     <!-- SCRIPT ORDER (MODULAR) -->
+    <!-- 1. Clases Base -->
     <script src="Synth/fx_synth.js"></script>
     <script src="Synth/bass_synth.js"></script>
     <script src="Synth/drum_synth.js"></script>
     <script src="Synth/timematrix.js"></script>
-    <!-- New Control Modules -->
+    
+    <!-- 2. Motor de Audio (Necesita las Clases) -->
     <script src="audio_engine.js"></script>
+    
+    <!-- 3. Interfaz (Necesita Audio) -->
     <script src="user_interface.js"></script>
+    
+    <!-- 4. Main (Inicia todo) -->
     <script src="main.js"></script>
 </body>
 </html>
