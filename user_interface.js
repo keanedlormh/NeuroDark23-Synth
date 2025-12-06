@@ -8,10 +8,10 @@ window.UI = {
     drawFrame: null,
     lastStep: -1,
 
-    // --- INICIALIZACIÓN ---
     init: function() {
         this.bindGlobalEvents();
         this.renderAll();
+        this.setupDigitalRepeaters(); // Initialize digital controls
         console.log("[UI] Interface Initialized");
     },
 
@@ -22,9 +22,8 @@ window.UI = {
         this.initClockSVG();
     },
 
-    // --- BINDINGS DE EVENTOS ---
     bindGlobalEvents: function() {
-        // Log Panel
+        // --- LOG PANEL ---
         const logBtn = document.getElementById('btn-toggle-log-internal');
         if(logBtn) logBtn.onclick = () => {
             const p = document.getElementById('sys-log-panel');
@@ -33,32 +32,61 @@ window.UI = {
             logBtn.innerText = p.classList.contains('translate-y-0') ? "[ HIDE ]" : "[ SHOW ]";
         };
 
-        // Custom Event: Step Select (Desde TimeMatrix)
-        window.addEventListener('stepSelect', (e) => {
-            window.AppState.selectedStep = e.detail.index;
-            this.updateEditor();
+        // --- OCTAVE CONTROLS ---
+        const octUp = document.getElementById('oct-up');
+        const octDown = document.getElementById('oct-down');
+        
+        if(octUp) octUp.onclick = () => {
+            if(window.AppState.currentOctave < 6) window.AppState.currentOctave++;
+            document.getElementById('oct-display').innerText = window.AppState.currentOctave;
+        };
+        if(octDown) octDown.onclick = () => {
+            if(window.AppState.currentOctave > 1) window.AppState.currentOctave--;
+            document.getElementById('oct-display').innerText = window.AppState.currentOctave;
+        };
+
+        // --- BPM CONTROL ---
+        const bpmInput = document.getElementById('bpm-input');
+        if(bpmInput) bpmInput.onchange = (e) => {
+            let val = parseInt(e.target.value);
+            if(val < 60) val = 60;
+            if(val > 300) val = 300;
+            window.AppState.bpm = val;
+        };
+
+        // --- EXPORT ---
+        this.bindClick('btn-open-export', () => this.toggleExportModal());
+        this.bindClick('btn-close-export', () => this.toggleExportModal());
+        this.bindClick('btn-start-render', () => window.AudioEngine.renderWav());
+        
+        document.querySelectorAll('.export-rep-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.export-rep-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                window.AppState.exportReps = parseInt(btn.dataset.rep);
+            };
         });
 
-        // Piano Keys
+        // --- PIANO ---
         document.querySelectorAll('.piano-key').forEach(k => {
             const handler = (e) => {
-                e.preventDefault(); // Importante para touch
+                e.preventDefault(); 
                 this.handlePianoInput(k.dataset.note);
             };
             k.addEventListener('mousedown', handler);
             k.addEventListener('touchstart', handler);
         });
 
-        // Controles de Edición
+        // --- EDIT TOOLS ---
         this.bindClick('btn-toggle-slide', () => this.toggleModifier('slide'));
         this.bindClick('btn-toggle-accent', () => this.toggleModifier('accent'));
         this.bindClick('btn-delete-note', () => this.clearStep());
         
-        // Transporte
+        // --- TRANSPORT ---
         this.bindClick('btn-play', () => window.Main.togglePlay());
         this.bindClick('app-logo', () => window.Main.togglePlay());
 
-        // Menú
+        // --- MENU ---
         this.bindClick('btn-open-menu', () => {
             this.renderSynthMenu();
             document.getElementById('main-menu').classList.remove('hidden');
@@ -69,14 +97,20 @@ window.UI = {
             document.getElementById('main-menu').classList.remove('flex');
         });
 
-        // UI Modes
+        // --- MODES & PANELS ---
         this.bindClick('btn-toggle-ui-mode', () => this.toggleUIMode());
         this.bindClick('btn-minimize-panel', () => this.togglePanel());
         this.bindClick('panel-header-trigger', () => this.togglePanel());
-        this.bindClick('btn-waveform', () => this.toggleWaveform()); // Añadido Waveform
+        this.bindClick('btn-waveform', () => this.toggleWaveform()); 
 
-        // Sliders
+        // --- ANALOG SLIDERS ---
         this.bindSliders();
+        
+        // --- MATRIX EVENT ---
+        window.addEventListener('stepSelect', (e) => {
+            window.AppState.selectedStep = e.detail.index;
+            this.updateEditor();
+        });
     },
 
     bindClick: function(id, fn) {
@@ -89,12 +123,8 @@ window.UI = {
             const s = window.AudioEngine.getSynth(window.AppState.activeView);
             if(!s) return;
             
-            // Map Cutoff Hz for analog slider
-            if(param === 'cutoff' && val > 100) {
-                val = ((val - 100) / 4900) * 100;
-            }
+            if(param === 'cutoff' && val > 100) val = ((val - 100) / 4900) * 100; // Hz to %
             
-            // Set param
             if(param === 'distortion') s.setDistortion(val);
             if(param === 'cutoff') s.setCutoff(val);
             if(param === 'resonance') s.setResonance(val);
@@ -105,13 +135,74 @@ window.UI = {
         };
 
         ['dist', 'cutoff', 'res', 'env', 'dec'].forEach(p => {
-            // Analog
             const elA = document.getElementById(`${p}-slider`);
             if(elA) elA.oninput = (e) => update(this.mapParamName(p), parseFloat(e.target.value));
-            
-            // Digital
-            const elD = document.getElementById(`${p}-digital`);
-            if(elD) elD.onchange = (e) => update(this.mapParamName(p), parseFloat(e.target.value));
+        });
+    },
+
+    setupDigitalRepeaters: function() {
+        // Maneja tanto los botones +/- como la entrada directa de texto
+        const buttons = document.querySelectorAll('.dfx-btn');
+        buttons.forEach(btn => {
+            let intervalId = null;
+            let timeoutId = null;
+            const targetParam = btn.dataset.target; 
+            const dir = parseInt(btn.dataset.dir); 
+
+            const changeVal = () => {
+                const s = window.AudioEngine.getSynth(window.AppState.activeView);
+                if(!s) return;
+                
+                let current = 0;
+                if(targetParam === 'distortion') current = s.params.distortion;
+                else if(targetParam === 'envMod') current = s.params.envMod;
+                else if(targetParam === 'decay') current = s.params.decay;
+                else if(targetParam === 'resonance') current = s.params.resonance * 5; 
+                else if(targetParam === 'cutoff') current = s.params.cutoff; 
+
+                let next = Math.max(0, Math.min(100, current + dir));
+                
+                // Mapeo inverso para resonancia (0-100 UI -> 0-20 Engine)
+                if(targetParam === 'resonance') s.setResonance(next / 5);
+                else if(targetParam === 'distortion') s.setDistortion(next);
+                else if(targetParam === 'envMod') s.setEnvMod(next);
+                else if(targetParam === 'decay') s.setDecay(next);
+                else if(targetParam === 'cutoff') s.setCutoff(next);
+                
+                this.syncControls(s);
+            };
+
+            const start = () => { changeVal(); timeoutId = setTimeout(() => { intervalId = setInterval(changeVal, 100); }, 400); };
+            const stop = () => { clearTimeout(timeoutId); clearInterval(intervalId); };
+
+            btn.addEventListener('mousedown', start);
+            btn.addEventListener('mouseup', stop);
+            btn.addEventListener('mouseleave', stop);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); start(); });
+            btn.addEventListener('touchend', stop);
+        });
+
+        // Digital Inputs Typing
+        ['dist', 'cutoff', 'res', 'env', 'dec'].forEach(p => {
+            const el = document.getElementById(`${p}-digital`);
+            if(el) {
+                el.onchange = (e) => {
+                    const s = window.AudioEngine.getSynth(window.AppState.activeView);
+                    if(!s) return;
+                    let val = parseInt(e.target.value);
+                    if(isNaN(val)) val = 0;
+                    val = Math.max(0, Math.min(100, val));
+                    
+                    const param = this.mapParamName(p);
+                    if(param === 'resonance') s.setResonance(val / 5);
+                    else if(param === 'distortion') s.setDistortion(val);
+                    else if(param === 'cutoff') s.setCutoff(val);
+                    else if(param === 'envMod') s.setEnvMod(val);
+                    else if(param === 'decay') s.setDecay(val);
+                    
+                    this.syncControls(s);
+                };
+            }
         });
     },
 
@@ -120,10 +211,8 @@ window.UI = {
         return map[short];
     },
 
-    // --- LÓGICA DE DIBUJADO ---
-    
     handlePianoInput: function(note) {
-        window.AudioEngine.init(); // Asegurar audio
+        window.AudioEngine.init(); 
         const id = window.AppState.activeView;
         if(id === 'drum') return;
 
@@ -139,7 +228,6 @@ window.UI = {
             accent: current ? current.accent : false
         };
 
-        // Preview
         const s = window.AudioEngine.getSynth(id);
         if(s) s.play(note, window.AppState.currentOctave, window.AudioEngine.ctx.currentTime);
 
@@ -160,16 +248,11 @@ window.UI = {
         } else {
             bEd.classList.remove('hidden');
             dEd.classList.add('hidden');
-            
-            // Sync params
             const s = window.AudioEngine.getSynth(id);
             if(s) this.syncControls(s);
-            
-            // Sync buttons
             this.updateModifiers();
         }
 
-        // Render Matrix
         if(window.timeMatrix) {
             window.timeMatrix.selectedStep = window.AppState.selectedStep;
             window.timeMatrix.render(id, window.AppState.editingBlock);
@@ -189,7 +272,7 @@ window.UI = {
 
         // Digital
         set('dist-digital', p.distortion);
-        set('res-digital', p.resonance);
+        set('res-digital', p.resonance * 5); // Display 0-100
         set('env-digital', p.envMod);
         set('dec-digital', p.decay);
         set('cutoff-digital', p.cutoff);
@@ -215,7 +298,7 @@ window.UI = {
         aBtn.className = `flex-1 py-1 border border-gray-700 bg-gray-900/50 text-gray-500 text-[10px] tracking-widest hover:text-green-400 hover:border-green-600 transition-all font-bold rounded ${note && note.accent ? '!text-green-400 !border-green-600 !bg-green-900/30' : ''}`;
     },
 
-    // --- LOOP VISUAL ---
+    // --- LOOP ---
     startLoop: function() {
         const loop = () => {
             if(!window.AudioEngine.ctx) return;
@@ -276,7 +359,6 @@ window.UI = {
         if(l) { l.style.backgroundColor='#fff'; setTimeout(()=>l.style.backgroundColor='', 50); }
     },
 
-    // --- MODALES Y PANELES ---
     togglePanel: function() {
         const p = document.getElementById('editor-panel');
         const b = document.getElementById('btn-minimize-panel');
@@ -328,6 +410,14 @@ window.UI = {
         }
     },
 
+    toggleExportModal: function() {
+        const m = document.getElementById('export-modal');
+        if(m) { 
+            m.classList.toggle('hidden'); 
+            m.classList.toggle('flex'); 
+        }
+    },
+
     renderTrackBar: function() {
         const c = document.getElementById('track-bar');
         if(!c) return;
@@ -355,7 +445,6 @@ window.UI = {
             b.onclick = () => { window.AppState.activeView = s.id; this.updateEditor(); this.renderTabs(); };
             c.appendChild(b);
         });
-        // Drums Tab
         const d = document.createElement('button');
         d.className = `px-3 py-1 text-[10px] font-bold border uppercase ${window.AppState.activeView === 'drum' ? 'text-green-400 bg-gray-900 border-green-500' : 'text-gray-500 border-transparent'}`;
         d.innerText = "DRUMS";
@@ -391,7 +480,6 @@ window.UI = {
         const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
         const drums = blk.drums[window.AppState.selectedStep] || [];
         
-        // Acceder a los kits de forma segura
         const kits = window.AudioEngine.drums ? window.AudioEngine.drums.kits : (window.DrumSynth.prototype.kits || []);
         
         kits.forEach(k => { 
