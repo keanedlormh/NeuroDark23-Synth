@@ -288,13 +288,12 @@
         </div>
     </div>
 
-    <!-- SCRIPT ORDER -->
+    <!-- SCRIPT ORDER (VITAL: CLASES -> MAIN) -->
     <script src="Synth/fx_synth.js"></script>
     <script src="Synth/bass_synth.js"></script>
     <script src="Synth/drum_synth.js"></script>
     <script src="Synth/timematrix.js"></script>
-    <script src="audio_engine.js"></script>
-    <script src="user_interface.js"></script>
+    <!-- SOLO main.js, eliminamos los modulos intermedios para evitar problemas de scope -->
     <script src="main.js"></script>
 </body>
 </html>
