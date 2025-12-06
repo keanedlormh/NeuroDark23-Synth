@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="style.css">
     
-    <!-- SYSTEM LOGGER (CRITICAL) -->
+    <!-- SYSTEM LOGGER -->
     <script>
         window.logToScreen = function(msg, type='info') {
             const consoleEl = document.getElementById('sys-log-content');
@@ -21,21 +21,10 @@
             }
             console.log(`[ND23] ${msg}`);
         };
-
-        // Captura de errores globales
         window.onerror = function(msg, url, line) {
             window.logToScreen(`CRITICAL: ${msg} (L${line})`, 'error');
-            const p = document.getElementById('sys-log-panel');
-            if(p) { 
-                p.classList.remove('-translate-y-full'); 
-                p.classList.add('translate-y-0');
-            }
             return false;
         };
-
-        window.addEventListener('unhandledrejection', function(event) {
-            window.logToScreen(`ASYNC ERR: ${event.reason}`, 'error');
-        });
     </script>
 </head>
 <body class="bg-black text-gray-300 font-mono overflow-hidden fixed inset-0 select-none">
@@ -50,7 +39,7 @@
             </div>
         </div>
         <div id="sys-log-content" class="flex-1 overflow-y-auto p-2 space-y-1 font-mono">
-            <div class="text-gray-500">System Ready. Waiting for Audio Context...</div>
+            <div class="text-gray-500">System Ready. Waiting...</div>
         </div>
     </div>
 
@@ -76,12 +65,10 @@
     <div id="main-menu" class="fixed inset-0 z-[100] bg-black/95 backdrop-blur hidden flex-col items-center justify-center gap-4">
         <div class="w-72 border border-gray-800 p-6 bg-gray-900/90 rounded">
             <h2 class="text-xl text-white tracking-widest mb-6 border-b border-green-600 pb-2 text-center glitch-text font-bold">MENU</h2>
-            
             <div class="mb-4 text-center space-y-2">
                  <button id="btn-toggle-ui-mode" class="w-full py-2 border border-green-700/50 text-green-400 bg-green-900/10 hover:bg-green-900/30 text-xs font-bold tracking-widest">UI MODE: ANALOG</button>
                  <button id="btn-toggle-visualizer" class="w-full py-2 border border-gray-700 text-gray-400 bg-transparent hover:bg-green-900/10 text-xs font-bold tracking-widest">VISUALIZER: OFF</button>
             </div>
-
             <div class="mb-6">
                 <h3 class="text-[10px] text-gray-500 mb-2 font-bold tracking-widest uppercase">Modules</h3>
                 <div id="synth-list-container" class="flex flex-col gap-1 mb-2"></div>
@@ -173,20 +160,17 @@
                 
                 <!-- ROW 1: CONTROLS (OCTAVE - MODIFIERS - WAVEFORM) -->
                 <div class="flex justify-between items-center shrink-0 gap-2">
-                    <!-- OCTAVE -->
                     <div class="flex items-center gap-1 bg-gray-900 rounded p-1 border border-gray-800 shrink-0">
                         <button id="oct-down" class="w-8 h-6 bg-gray-800 text-xs hover:bg-gray-700 rounded text-gray-400 font-bold">-</button>
                         <span id="oct-display" class="w-8 text-center text-xs font-bold text-green-500">3</span>
                         <button id="oct-up" class="w-8 h-6 bg-gray-800 text-xs hover:bg-gray-700 rounded text-gray-400 font-bold">+</button>
                     </div>
                     
-                    <!-- MODIFIERS -->
                     <div class="flex gap-1 flex-1 justify-center">
                         <button id="btn-toggle-slide" class="px-2 py-1 border border-gray-700 bg-gray-900/50 text-gray-500 text-[10px] tracking-widest hover:text-green-400 hover:border-green-600 transition-all font-bold rounded">~ SLIDE</button>
                         <button id="btn-toggle-accent" class="px-2 py-1 border border-gray-700 bg-gray-900/50 text-gray-500 text-[10px] tracking-widest hover:text-green-400 hover:border-green-600 transition-all font-bold rounded">^ ACCENT</button>
                     </div>
 
-                    <!-- WAVEFORM -->
                     <button id="btn-waveform" class="w-20 h-8 bg-gray-900 border border-gray-800 rounded flex items-center justify-center gap-2 text-[10px] text-gray-400 hover:border-green-500 hover:text-green-500 transition-colors shrink-0">
                         <span class="text-lg font-bold leading-none mb-0.5">~</span>
                         <span>SAW</span>
@@ -195,43 +179,36 @@
 
                 <!-- ROW 2: DEDICATED FX BAR -->
                 <div id="fx-container-bar" class="w-full bg-[#050505] border border-gray-800 rounded p-2 relative shadow-inner">
-                    
-                    <!-- ANALOG MODE (STACKED VERTICALLY) -->
+                    <!-- ANALOG MODE -->
                     <div id="fx-controls-analog" class="flex flex-col gap-2 w-full transition-all duration-300">
-                        <!-- CUTOFF -->
                         <div class="flex items-center gap-2 bg-gray-900/50 p-1 rounded border border-gray-800/50">
                             <label class="text-[8px] text-gray-500 w-8 text-right font-bold">CUT</label>
                             <input type="range" id="cutoff-slider" min="100" max="5000" value="800" class="flex-1 h-1 bg-black rounded appearance-none cursor-pointer">
                         </div>
-                        <!-- RESONANCE -->
                         <div class="flex items-center gap-2 bg-gray-900/50 p-1 rounded border border-gray-800/50">
                             <label class="text-[8px] text-gray-500 w-8 text-right font-bold">RES</label>
                             <input type="range" id="res-slider" min="0" max="20" value="4" class="flex-1 h-1 bg-black rounded appearance-none cursor-pointer">
                         </div>
-                        <!-- ENVELOPE -->
                         <div class="flex items-center gap-2 bg-gray-900/50 p-1 rounded border border-gray-800/50">
                             <label class="text-[8px] text-gray-500 w-8 text-right font-bold">ENV</label>
                             <input type="range" id="env-slider" min="0" max="100" value="60" class="flex-1 h-1 bg-black rounded appearance-none cursor-pointer">
                         </div>
-                        <!-- DECAY -->
                         <div class="flex items-center gap-2 bg-gray-900/50 p-1 rounded border border-gray-800/50">
                             <label class="text-[8px] text-gray-500 w-8 text-right font-bold">DEC</label>
                             <input type="range" id="dec-slider" min="0" max="100" value="40" class="flex-1 h-1 bg-black rounded appearance-none cursor-pointer">
                         </div>
-                        <!-- DRIVE -->
                         <div class="flex items-center gap-2 bg-gray-900/50 p-1 rounded border border-gray-800/50">
                             <label class="text-[8px] text-gray-500 w-8 text-right font-bold">DRV</label>
                             <input type="range" id="dist-slider" min="0" max="100" value="20" class="flex-1 h-1 bg-black rounded appearance-none cursor-pointer">
                         </div>
                     </div>
 
-                    <!-- DIGITAL MODE (STACKED HORIZONTALLY) -->
+                    <!-- DIGITAL MODE -->
                     <div id="fx-controls-digital" class="hidden flex gap-1 w-full">
-                        <!-- CUTOFF -->
                         <div class="digital-fx-box">
                             <div class="dfx-label">CUT</div>
                             <div class="dfx-value-container relative group">
-                                <input type="number" id="cutoff-digital" value="14" class="dfx-value bg-transparent text-center focus:outline-none focus:text-white" min="0" max="100">
+                                <input type="number" id="cutoff-digital" value="14" class="dfx-value" min="0" max="100">
                                 <span class="text-[8px] text-gray-600 absolute right-1 pointer-events-none">%</span>
                             </div>
                             <div class="dfx-buttons">
@@ -239,12 +216,10 @@
                                 <button class="dfx-btn" data-target="cutoff" data-dir="1">+</button>
                             </div>
                         </div>
-
-                        <!-- RESONANCE -->
                         <div class="digital-fx-box">
                             <div class="dfx-label">RES</div>
                             <div class="dfx-value-container relative group">
-                                <input type="number" id="res-digital" value="20" class="dfx-value bg-transparent text-center focus:outline-none focus:text-white" min="0" max="100">
+                                <input type="number" id="res-digital" value="20" class="dfx-value" min="0" max="100">
                                 <span class="text-[8px] text-gray-600 absolute right-1 pointer-events-none">%</span>
                             </div>
                             <div class="dfx-buttons">
@@ -252,12 +227,10 @@
                                 <button class="dfx-btn" data-target="resonance" data-dir="1">+</button>
                             </div>
                         </div>
-
-                        <!-- ENVELOPE -->
                         <div class="digital-fx-box">
                             <div class="dfx-label">ENV</div>
                             <div class="dfx-value-container relative group">
-                                <input type="number" id="env-digital" value="60" class="dfx-value bg-transparent text-center focus:outline-none focus:text-white" min="0" max="100">
+                                <input type="number" id="env-digital" value="60" class="dfx-value" min="0" max="100">
                                 <span class="text-[8px] text-gray-600 absolute right-1 pointer-events-none">%</span>
                             </div>
                             <div class="dfx-buttons">
@@ -265,12 +238,10 @@
                                 <button class="dfx-btn" data-target="envMod" data-dir="1">+</button>
                             </div>
                         </div>
-
-                        <!-- DECAY -->
                         <div class="digital-fx-box">
                             <div class="dfx-label">DEC</div>
                             <div class="dfx-value-container relative group">
-                                <input type="number" id="dec-digital" value="40" class="dfx-value bg-transparent text-center focus:outline-none focus:text-white" min="0" max="100">
+                                <input type="number" id="dec-digital" value="40" class="dfx-value" min="0" max="100">
                                 <span class="text-[8px] text-gray-600 absolute right-1 pointer-events-none">%</span>
                             </div>
                             <div class="dfx-buttons">
@@ -278,12 +249,10 @@
                                 <button class="dfx-btn" data-target="decay" data-dir="1">+</button>
                             </div>
                         </div>
-
-                        <!-- DRIVE -->
                         <div class="digital-fx-box">
                             <div class="dfx-label">DRV</div>
                             <div class="dfx-value-container relative group">
-                                <input type="number" id="dist-digital" value="20" class="dfx-value bg-transparent text-center focus:outline-none focus:text-white" min="0" max="100">
+                                <input type="number" id="dist-digital" value="20" class="dfx-value" min="0" max="100">
                                 <span class="text-[8px] text-gray-600 absolute right-1 pointer-events-none">%</span>
                             </div>
                             <div class="dfx-buttons">
@@ -294,9 +263,8 @@
                     </div>
                 </div>
 
-                <!-- PIANO (RESTRUCTURED OVERLAY) -->
+                <!-- PIANO -->
                 <div id="piano-container" class="relative h-20 w-full select-none mb-1 shrink-0">
-                    <!-- WHITE KEYS (BACKGROUND) -->
                     <div class="flex w-full h-full gap-0.5">
                         <button class="piano-key white-key flex-1" data-note="C">C</button>
                         <button class="piano-key white-key flex-1" data-note="D">D</button>
@@ -306,18 +274,11 @@
                         <button class="piano-key white-key flex-1" data-note="A">A</button>
                         <button class="piano-key white-key flex-1" data-note="B">B</button>
                     </div>
-
-                    <!-- BLACK KEYS (OVERLAY - ABSOLUTE POSITIONING) -->
-                    <!-- C# (Between 1 and 2) -> 14.28% -->
+                    <!-- BLACK KEYS -->
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 14.28%;" data-note="C#">C#</button>
-                    <!-- D# (Between 2 and 3) -> 28.57% -->
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 28.57%;" data-note="D#">D#</button>
-                    
-                    <!-- F# (Between 4 and 5) -> 57.14% -->
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 57.14%;" data-note="F#">F#</button>
-                    <!-- G# (Between 5 and 6) -> 71.42% -->
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 71.42%;" data-note="G#">G#</button>
-                    <!-- A# (Between 6 and 7) -> 85.71% -->
                     <button class="piano-key black-key absolute top-0 w-[10%] -translate-x-1/2 z-10" style="left: 85.71%;" data-note="A#">A#</button>
                 </div>
                 
@@ -328,11 +289,14 @@
         </div>
     </div>
 
-    <!-- SCRIPT ORDER -->
+    <!-- SCRIPT ORDER (MODULAR) -->
     <script src="Synth/fx_synth.js"></script>
     <script src="Synth/bass_synth.js"></script>
     <script src="Synth/drum_synth.js"></script>
     <script src="Synth/timematrix.js"></script>
+    <!-- New Control Modules -->
+    <script src="audio_engine.js"></script>
+    <script src="user_interface.js"></script>
     <script src="main.js"></script>
 </body>
 </html>
