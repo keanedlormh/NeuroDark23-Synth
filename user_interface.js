@@ -73,6 +73,7 @@ window.UI = {
         this.bindClick('btn-toggle-ui-mode', () => this.toggleUIMode());
         this.bindClick('btn-minimize-panel', () => this.togglePanel());
         this.bindClick('panel-header-trigger', () => this.togglePanel());
+        this.bindClick('btn-waveform', () => this.toggleWaveform()); // Añadido Waveform
 
         // Sliders
         this.bindSliders();
@@ -192,6 +193,14 @@ window.UI = {
         set('env-digital', p.envMod);
         set('dec-digital', p.decay);
         set('cutoff-digital', p.cutoff);
+
+        // Waveform
+        const btnW = document.getElementById('btn-waveform');
+        if(btnW) {
+            btnW.innerHTML = p.waveform === 'square' 
+                ? '<span class="text-xl font-bold leading-none mb-0.5">Π</span><span>SQR</span>' 
+                : '<span class="text-xl font-bold leading-none mb-0.5">~</span><span>SAW</span>';
+        }
     },
 
     updateModifiers: function() {
@@ -289,6 +298,36 @@ window.UI = {
         this.updateEditor();
     },
 
+    toggleWaveform: function() {
+        const s = window.AudioEngine.getSynth(window.AppState.activeView);
+        if(s) {
+            const next = s.params.waveform === 'sawtooth' ? 'square' : 'sawtooth';
+            s.setWaveform(next);
+            this.syncControls(s);
+        }
+    },
+
+    toggleModifier: function(prop) {
+        const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+        const track = blk.tracks[window.AppState.activeView];
+        if(!track) return;
+        const note = track[window.AppState.selectedStep];
+        if(note) {
+            note[prop] = !note[prop];
+            this.updateEditor();
+        }
+    },
+
+    clearStep: function() {
+        const id = window.AppState.activeView;
+        if(id === 'drum') return;
+        const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+        if(blk.tracks[id]) {
+            blk.tracks[id][window.AppState.selectedStep] = null;
+            this.updateEditor();
+        }
+    },
+
     renderTrackBar: function() {
         const c = document.getElementById('track-bar');
         if(!c) return;
@@ -337,7 +376,7 @@ window.UI = {
             btn.onclick = () => {
                 if(window.AudioEngine.removeSynth(s.id)) {
                     window.timeMatrix.removeTrack(s.id);
-                    if(window.AppState.activeView === s.id) window.AppState.activeView = 'drum'; // Fallback
+                    if(window.AppState.activeView === s.id) window.AppState.activeView = 'drum'; 
                     this.renderAll();
                 }
             };
@@ -346,34 +385,16 @@ window.UI = {
         });
     },
 
-    toggleModifier: function(prop) {
-        const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
-        const track = blk.tracks[window.AppState.activeView];
-        if(!track) return;
-        const note = track[window.AppState.selectedStep];
-        if(note) {
-            note[prop] = !note[prop];
-            this.updateEditor();
-        }
-    },
-
-    clearStep: function() {
-        const id = window.AppState.activeView;
-        if(id === 'drum') return;
-        const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
-        if(blk.tracks[id]) {
-            blk.tracks[id][window.AppState.selectedStep] = null;
-            this.updateEditor();
-        }
-    },
-
     renderDrumEditor: function() {
         const c = document.getElementById('editor-drum');
         c.innerHTML = '';
         const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
         const drums = blk.drums[window.AppState.selectedStep] || [];
         
-        window.DrumSynth.prototype.kits.forEach(k => { // Acceso estático si es posible, sino hardcode
+        // Acceder a los kits de forma segura
+        const kits = window.AudioEngine.drums ? window.AudioEngine.drums.kits : (window.DrumSynth.prototype.kits || []);
+        
+        kits.forEach(k => { 
              const act = drums.includes(k.id);
              const b = document.createElement('button');
              b.className = `w-full py-2 px-3 mb-1 border flex justify-between items-center text-[10px] ${act ? 'bg-gray-900 border-green-700 text-green-400' : 'bg-transparent border-gray-800 text-gray-500'}`;
