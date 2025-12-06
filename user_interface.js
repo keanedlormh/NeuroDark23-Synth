@@ -3,7 +3,7 @@
  * Responsabilidad: Eventos DOM, Pintado de Grid, Sincronización de Controles
  */
 
-window.visualQueue = [];
+window.visualQueue = []; // Cola de eventos visuales compartida
 let drawFrameId = null;
 let lastDrawnStep = -1;
 
@@ -17,26 +17,28 @@ function drawVisuals() {
     if(!window.audioCtx) return;
     const t = window.audioCtx.currentTime;
     
-    // Consumir cola visual
     while(window.visualQueue.length && window.visualQueue[0].time <= t) {
         const ev = window.visualQueue.shift();
         
         if(lastDrawnStep !== ev.step) {
             window.updatePlayClockUI(ev.step);
             
-            // Seguir reproducción (cambiar bloque)
+            // Cambio de bloque automático
             if(window.AppState.followPlayback && ev.block !== window.AppState.editingBlock) {
                 window.AppState.editingBlock = ev.block;
                 window.updateEditors();
                 window.renderTrackBar();
             }
             
-            // Iluminar Grid
+            // Resaltado de Grid
             if(ev.block === window.AppState.editingBlock) {
                 if(window.timeMatrix) window.timeMatrix.highlightPlayingStep(ev.step);
                 if(ev.step % 4 === 0) blinkLed();
+            } else {
+                if(window.timeMatrix) window.timeMatrix.highlightPlayingStep(-1);
             }
             
+            if(ev.step === 0) window.renderTrackBar();
             lastDrawnStep = ev.step;
         }
     }
@@ -46,14 +48,21 @@ function drawVisuals() {
     }
 }
 
-// --- DOM BUILDERS ---
+function blinkLed() {
+    const led = document.getElementById('activity-led');
+    if(led) {
+        led.style.backgroundColor = '#fff';
+        led.style.boxShadow = '0 0 8px #fff';
+        setTimeout(() => { led.style.backgroundColor = ''; led.style.boxShadow = ''; }, 50);
+    }
+}
 
+// --- DOM BUILDERS ---
 window.renderInstrumentTabs = function() {
     const c = document.getElementById('instrument-tabs-container');
     if(!c) return;
     c.innerHTML = '';
     
-    // Tabs de Bajos
     window.bassSynths.forEach(s => {
         const b = document.createElement('button');
         const isActive = window.AppState.activeView === s.id;
@@ -63,7 +72,6 @@ window.renderInstrumentTabs = function() {
         c.appendChild(b);
     });
     
-    // Tab de Batería
     const d = document.createElement('button');
     const dActive = window.AppState.activeView === 'drum';
     d.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${dActive ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
@@ -80,13 +88,11 @@ window.renderTrackBar = function() {
     const blocks = window.timeMatrix.blocks;
     const current = window.AppState.editingBlock;
     
-    // Actualizar labels del dashboard
     document.getElementById('display-total-blocks').innerText = blocks.length;
     document.getElementById('display-current-block').innerText = current + 1;
     
     blocks.forEach((_, i) => {
         const el = document.createElement('div');
-        // Estilos condicionales
         let classes = "track-block ";
         if(i === current) classes += "track-block-editing ";
         if(window.AppState.isPlaying && i === window.AppState.currentPlayBlock) classes += "track-block-playing ";
@@ -119,24 +125,21 @@ window.updateEditors = function() {
         updateBassModifiersState();
     }
     
-    // Redibujar la matriz
     if(window.timeMatrix) {
         window.timeMatrix.selectedStep = window.AppState.selectedStep;
         window.timeMatrix.render(window.AppState.activeView, window.AppState.editingBlock);
     }
 };
 
-// Auxiliar para botones Slide/Accent
 function updateBassModifiersState() {
     const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
-    if(!blk || !blk.tracks) return;
+    if(!blk) return;
     
     const noteData = blk.tracks[window.AppState.activeView] ? blk.tracks[window.AppState.activeView][window.AppState.selectedStep] : null;
     
     const slideBtn = document.getElementById('btn-toggle-slide');
     const accBtn = document.getElementById('btn-toggle-accent');
     
-    // Reset styles
     [slideBtn, accBtn].forEach(b => {
         if(b) b.classList.remove('text-green-400', 'border-green-600', 'bg-green-900/30');
     });
@@ -154,7 +157,6 @@ function renderDrumEditor() {
     
     const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
     const currentStepDrums = blk.drums[window.AppState.selectedStep] || [];
-    
     const kits = (window.drumSynth && window.drumSynth.kits) ? window.drumSynth.kits : [];
     
     kits.forEach(k => {
@@ -165,13 +167,11 @@ function renderDrumEditor() {
         
         b.onclick = () => {
             window.initAudioEngine();
-            // Toggle Logic
             if(isActive) {
                 const idx = currentStepDrums.indexOf(k.id);
                 if(idx > -1) currentStepDrums.splice(idx, 1);
             } else {
                 currentStepDrums.push(k.id);
-                // Preview sound
                 if(window.drumSynth) window.drumSynth.play(k.id, window.audioCtx.currentTime);
             }
             window.updateEditors();
@@ -210,44 +210,30 @@ window.updatePlayClockUI = function(step) {
     }
 };
 
-function blinkLed() {
-    const led = document.getElementById('activity-led');
-    if(led) {
-        led.style.backgroundColor = '#fff';
-        led.style.boxShadow = '0 0 8px #fff';
-        setTimeout(() => { led.style.backgroundColor = ''; led.style.boxShadow = ''; }, 50);
-    }
-}
-
 // --- CONTROL BINDINGS ---
 window.setupControlListeners = function() {
     
-    // 1. Piano Keys
+    // 1. Piano Keys (Touch/Click)
     document.querySelectorAll('.piano-key').forEach(k => {
-        k.onclick = () => {
-            window.initAudioEngine(); // Ensure audio starts on interaction
+        const playKey = (e) => {
+            e.preventDefault(); // Evitar doble disparo en touch
+            window.initAudioEngine();
             
             const note = k.dataset.note;
             const activeId = window.AppState.activeView;
             
-            // Solo actuar si estamos en vista de bajo
             if(activeId === 'drum') return;
 
-            // Buscar sinte
             const synth = window.bassSynths.find(s => s.id === activeId);
-            if(!synth) {
-                console.error("Synth not found:", activeId);
-                return;
-            }
+            if(!synth) return;
 
-            // Datos de la celda actual
             const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
-            // Asegurar que existe el track
+            // Asegurar track
             if(!blk.tracks[activeId]) window.timeMatrix.registerTrack(activeId);
             
             const currentStepData = blk.tracks[activeId][window.AppState.selectedStep];
             
-            // Guardar nueva nota (preservando slide/accent si existían)
+            // Grabar nota
             blk.tracks[activeId][window.AppState.selectedStep] = { 
                 note: note, 
                 octave: window.AppState.currentOctave, 
@@ -255,25 +241,27 @@ window.setupControlListeners = function() {
                 accent: currentStepData ? currentStepData.accent : false 
             };
             
-            // Reproducir sonido
+            // Reproducir (Pre-escucha)
             synth.play(note, window.AppState.currentOctave, window.audioCtx.currentTime);
             
-            // Actualizar UI
             window.updateEditors();
         };
+
+        k.addEventListener('mousedown', playKey);
+        k.addEventListener('touchstart', playKey);
     });
 
-    // 2. Modifiers (Slide/Accent)
+    // 2. Modifiers
     const toggleMod = (prop) => {
         if(window.AppState.activeView === 'drum') return;
         const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
         const track = blk.tracks[window.AppState.activeView];
-        if(!track) return;
-        
-        const note = track[window.AppState.selectedStep];
-        if(note) {
-            note[prop] = !note[prop];
-            window.updateEditors();
+        if(track) {
+            const note = track[window.AppState.selectedStep];
+            if(note) {
+                note[prop] = !note[prop];
+                window.updateEditors();
+            }
         }
     };
     
@@ -287,45 +275,40 @@ window.setupControlListeners = function() {
     const btnDel = document.getElementById('btn-delete-note');
     if(btnDel) btnDel.onclick = () => {
         const id = window.AppState.activeView;
-        if(id === 'drum') return;
-        const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
-        if(blk.tracks[id]) {
-            blk.tracks[id][window.AppState.selectedStep] = null;
-            window.updateEditors();
+        if(id !== 'drum') {
+            const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+            if(blk.tracks[id]) {
+                blk.tracks[id][window.AppState.selectedStep] = null;
+                window.updateEditors();
+            }
         }
     };
 
-    // 4. Sliders & Knobs Binding
+    // 4. Bind Controls
     bindSynthControls();
 };
 
 function bindSynthControls() {
-    // Función de actualización unificada
     const updateParam = (param, value) => {
         const s = window.bassSynths.find(sy => sy.id === window.AppState.activeView);
         if(!s) return;
 
         let finalVal = value;
-        // Mapping especial para Cutoff (Hz a %)
+        // Mapping Cutoff Hz -> % para slider analógico
         if(param === 'cutoff' && value > 100) {
-             // Asumimos que viene del slider analógico en Hz (100-5000)
-             // Convertir a 0-100 para el motor interno
              const min = 100, max = 5000;
              finalVal = ((value - min) / (max - min)) * 100;
         }
 
-        // Setters
         if(param === 'distortion') s.setDistortion(finalVal);
         if(param === 'cutoff') s.setCutoff(finalVal);
         if(param === 'resonance') s.setResonance(finalVal);
         if(param === 'envMod') s.setEnvMod(finalVal);
         if(param === 'decay') s.setDecay(finalVal);
         
-        // Sincronizar todos los inputs visuales
         window.syncControlsFromSynth(s.id);
     };
 
-    // Binding Helper
     const bind = (id, param) => {
         const el = document.getElementById(id);
         if(el) el.oninput = (e) => updateParam(param, parseFloat(e.target.value));
@@ -335,30 +318,25 @@ function bindSynthControls() {
         if(el) el.onchange = (e) => updateParam(param, parseFloat(e.target.value));
     };
 
-    // Analog Sliders
     bind('dist-slider', 'distortion');
     bind('cutoff-slider', 'cutoff');
     bind('res-slider', 'resonance');
     bind('env-slider', 'envMod');
     bind('dec-slider', 'decay');
 
-    // Digital Inputs
     bindChange('dist-digital', 'distortion');
     bindChange('cutoff-digital', 'cutoff');
-    // Resonancia digital muestra %, el motor usa 0-20. 
-    // Aquí simplificamos: el input digital envía 0-100, el motor lo recibe.
-    // Necesitamos asegurar que el setter del motor maneje la escala.
     bindChange('res-digital', 'resonance'); 
     bindChange('env-digital', 'envMod');
     bindChange('dec-digital', 'decay');
 }
 
-// Sincronización UI -> Estado del Sinte
+// Sync UI -> Engine State
 window.syncControlsFromSynth = function(viewId) {
     const s = window.bassSynths.find(sy => sy.id === viewId);
     if(!s) return;
     
-    const p = s.params; // { distortion: 0-100, cutoff: 0-100, ... }
+    const p = s.params;
 
     const setVal = (id, val) => {
         const el = document.getElementById(id);
@@ -371,18 +349,16 @@ window.syncControlsFromSynth = function(viewId) {
     setVal('env-slider', p.envMod);
     setVal('dec-slider', p.decay);
     
-    // Cutoff Slider espera Hz
     const cutoffHz = ((p.cutoff / 100) * 4900) + 100;
     setVal('cutoff-slider', cutoffHz);
 
-    // Digital (Direct 0-100)
+    // Digital
     setVal('dist-digital', p.distortion);
     setVal('cutoff-digital', p.cutoff);
     setVal('res-digital', p.resonance); 
     setVal('env-digital', p.envMod);
     setVal('dec-digital', p.decay);
     
-    // Waveform
     const btnW = document.getElementById('btn-waveform');
     if(btnW) {
         btnW.innerHTML = p.waveform === 'square' 
