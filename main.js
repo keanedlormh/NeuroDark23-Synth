@@ -369,8 +369,8 @@ function syncControlsFromSynth(viewId) {
     const s = bassSynths.find(sy => sy.id === viewId);
     const wvBtn = document.getElementById('btn-waveform');
     if(wvBtn && s) {
-        if(s.params.waveform === 'square') wvBtn.innerHTML = '<span class="text-lg font-bold leading-none">Π</span>';
-        else wvBtn.innerHTML = '<span class="text-lg font-bold leading-none">~</span>';
+        if(s.params.waveform === 'square') wvBtn.innerHTML = '<span class="text-xl font-bold leading-none mb-0.5">Π</span><span>SQR</span>';
+        else wvBtn.innerHTML = '<span class="text-xl font-bold leading-none mb-0.5">~</span><span>SAW</span>';
     }
 
     if(!s) return;
@@ -482,7 +482,7 @@ function renderSynthMenu() { const c = document.getElementById('synth-list-conta
 function togglePanelState() { AppState.panelCollapsed = !AppState.panelCollapsed; const p = document.getElementById('editor-panel'); const btn = document.getElementById('btn-minimize-panel'); if(AppState.panelCollapsed) { p.classList.remove('panel-expanded'); p.classList.add('panel-collapsed'); btn.innerHTML = "&#9650;"; } else { p.classList.remove('panel-collapsed'); p.classList.add('panel-expanded'); btn.innerHTML = "&#9660;"; } }
 function toggleVisualizerMode() { AppState.followPlayback = !AppState.followPlayback; const btn = document.getElementById('btn-toggle-visualizer'); if(AppState.followPlayback) { btn.innerText = "VISUALIZER: ON"; btn.classList.remove('border-gray-700', 'text-gray-400'); btn.classList.add('border-green-500', 'text-green-400', 'bg-green-900/20'); } else { btn.innerText = "VISUALIZER: OFF"; btn.classList.remove('border-green-500', 'text-green-400', 'bg-green-900/20'); btn.classList.add('border-gray-700', 'text-gray-400'); } }
 
-// --- MODIFIED TOGGLE UI MODE ---
+// UPDATED: Toggle UI Mode logic using 'hidden' class to handle vertical vs horizontal spacing
 function toggleUIMode() { 
     AppState.uiMode = AppState.uiMode === 'analog' ? 'digital' : 'analog'; 
     const btn = document.getElementById('btn-toggle-ui-mode'); 
@@ -492,13 +492,15 @@ function toggleUIMode() {
     if(AppState.uiMode === 'digital') { 
         btn.innerText = "UI MODE: DIGITAL"; 
         btn.classList.add('border-green-500', 'text-green-300'); 
-        analogP.classList.add('hidden'); // Use hidden instead of opacity
+        
+        analogP.classList.add('hidden'); // Fully hide to collapse space
         digitalP.classList.remove('hidden'); 
     } else { 
         btn.innerText = "UI MODE: ANALOG"; 
         btn.classList.remove('border-green-500', 'text-green-300'); 
+        
         analogP.classList.remove('hidden'); 
-        digitalP.classList.add('hidden'); 
+        digitalP.classList.add('hidden'); // Fully hide
     } 
     syncControlsFromSynth(AppState.activeView); 
 }
