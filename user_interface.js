@@ -1,92 +1,190 @@
 /*
  * USER INTERFACE MODULE
- * Handles: Visuals, DOM Manipulation, Input Sync
+ * Responsabilidad: Eventos DOM, Pintado de Grid, Sincronización de Controles
  */
 
-// --- GLOBAL UTILS (DOM HELPERS) ---
-window.toggleMenu = function() {
-    const m = document.getElementById('main-menu');
-    if(m) { m.classList.toggle('hidden'); m.classList.toggle('flex'); }
-};
-
-window.toggleExportModal = function() {
-    const m = document.getElementById('export-modal');
-    if(m) { m.classList.toggle('hidden'); m.classList.toggle('flex'); }
-};
-
-window.removeBassSynth = function(id) {
-    if(bassSynths.length <= 1) {
-        window.logToScreen("Cannot remove last synth", 'warn');
-        return;
-    }
-    const idx = bassSynths.findIndex(s => s.id === id);
-    if(idx > -1) {
-        bassSynths.splice(idx, 1);
-        if(window.timeMatrix) window.timeMatrix.removeTrack(id);
-        renderSynthMenu();
-        renderInstrumentTabs();
-        if(AppState.activeView === id) setTab(bassSynths[0].id);
-        window.logToScreen(`Removed ${id}`);
-    }
-};
-
-function safeClick(id, fn) {
-    const el = document.getElementById(id);
-    if(el) el.onclick = fn;
-}
+window.visualQueue = [];
+let drawFrameId = null;
+let lastDrawnStep = -1;
 
 // --- VISUAL LOOP ---
-let lastDrawnStep = -1;
-let drawFrameId = null;
+window.startVisualLoop = function() {
+    if(drawFrameId) cancelAnimationFrame(drawFrameId);
+    drawVisuals();
+};
 
-function drawLoop() {
-    const t = audioCtx.currentTime;
+function drawVisuals() {
+    if(!window.audioCtx) return;
+    const t = window.audioCtx.currentTime;
     
-    // Procesar cola visual generada por audio_engine.js
-    while(window.visualQueue && window.visualQueue.length && window.visualQueue[0].time <= t) {
+    // Consumir cola visual
+    while(window.visualQueue.length && window.visualQueue[0].time <= t) {
         const ev = window.visualQueue.shift();
         
         if(lastDrawnStep !== ev.step) {
-            updatePlayClock(ev.step);
+            window.updatePlayClockUI(ev.step);
             
-            // Seguimiento de bloques
-            if(AppState.followPlayback && ev.block !== AppState.editingBlock) {
-                AppState.editingBlock = ev.block;
-                updateEditors();
-                renderTrackBar();
+            // Seguir reproducción (cambiar bloque)
+            if(window.AppState.followPlayback && ev.block !== window.AppState.editingBlock) {
+                window.AppState.editingBlock = ev.block;
+                window.updateEditors();
+                window.renderTrackBar();
             }
             
-            // Highlight Grid
-            if(ev.block === AppState.editingBlock) {
-                window.timeMatrix.highlightPlayingStep(ev.step);
+            // Iluminar Grid
+            if(ev.block === window.AppState.editingBlock) {
+                if(window.timeMatrix) window.timeMatrix.highlightPlayingStep(ev.step);
                 if(ev.step % 4 === 0) blinkLed();
-            } else {
-                window.timeMatrix.highlightPlayingStep(-1);
             }
             
-            if(ev.step === 0) renderTrackBar();
             lastDrawnStep = ev.step;
         }
     }
     
-    if(AppState.isPlaying) {
-        drawFrameId = requestAnimationFrame(drawLoop);
+    if(window.AppState.isPlaying) {
+        drawFrameId = requestAnimationFrame(drawVisuals);
     }
 }
 
-function blinkLed() {
-    const led = document.getElementById('activity-led');
-    if(led) {
-        led.style.backgroundColor = '#fff';
-        led.style.boxShadow = '0 0 8px #fff';
-        setTimeout(() => { led.style.backgroundColor = ''; led.style.boxShadow = ''; }, 50);
+// --- DOM BUILDERS ---
+
+window.renderInstrumentTabs = function() {
+    const c = document.getElementById('instrument-tabs-container');
+    if(!c) return;
+    c.innerHTML = '';
+    
+    // Tabs de Bajos
+    window.bassSynths.forEach(s => {
+        const b = document.createElement('button');
+        const isActive = window.AppState.activeView === s.id;
+        b.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${isActive ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
+        b.innerText = s.id;
+        b.onclick = () => window.setTab(s.id);
+        c.appendChild(b);
+    });
+    
+    // Tab de Batería
+    const d = document.createElement('button');
+    const dActive = window.AppState.activeView === 'drum';
+    d.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${dActive ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
+    d.innerText = "DRUMS";
+    d.onclick = () => window.setTab('drum');
+    c.appendChild(d);
+};
+
+window.renderTrackBar = function() {
+    const c = document.getElementById('track-bar');
+    if(!c) return;
+    c.innerHTML = '';
+    
+    const blocks = window.timeMatrix.blocks;
+    const current = window.AppState.editingBlock;
+    
+    // Actualizar labels del dashboard
+    document.getElementById('display-total-blocks').innerText = blocks.length;
+    document.getElementById('display-current-block').innerText = current + 1;
+    
+    blocks.forEach((_, i) => {
+        const el = document.createElement('div');
+        // Estilos condicionales
+        let classes = "track-block ";
+        if(i === current) classes += "track-block-editing ";
+        if(window.AppState.isPlaying && i === window.AppState.currentPlayBlock) classes += "track-block-playing ";
+        
+        el.className = classes;
+        el.innerText = i + 1;
+        el.onclick = () => {
+            window.AppState.editingBlock = i;
+            window.updateEditors();
+            window.renderTrackBar();
+        };
+        c.appendChild(el);
+    });
+};
+
+window.updateEditors = function() {
+    const bEd = document.getElementById('editor-bass');
+    const dEd = document.getElementById('editor-drum');
+    const info = document.getElementById('step-info-display');
+    
+    if(info) info.innerText = `STEP ${window.AppState.selectedStep+1} // ${window.AppState.activeView.toUpperCase()}`;
+    
+    if(window.AppState.activeView === 'drum') {
+        bEd.classList.add('hidden');
+        dEd.classList.remove('hidden');
+        renderDrumEditor();
+    } else {
+        bEd.classList.remove('hidden');
+        dEd.classList.add('hidden');
+        updateBassModifiersState();
+    }
+    
+    // Redibujar la matriz
+    if(window.timeMatrix) {
+        window.timeMatrix.selectedStep = window.AppState.selectedStep;
+        window.timeMatrix.render(window.AppState.activeView, window.AppState.editingBlock);
+    }
+};
+
+// Auxiliar para botones Slide/Accent
+function updateBassModifiersState() {
+    const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+    if(!blk || !blk.tracks) return;
+    
+    const noteData = blk.tracks[window.AppState.activeView] ? blk.tracks[window.AppState.activeView][window.AppState.selectedStep] : null;
+    
+    const slideBtn = document.getElementById('btn-toggle-slide');
+    const accBtn = document.getElementById('btn-toggle-accent');
+    
+    // Reset styles
+    [slideBtn, accBtn].forEach(b => {
+        if(b) b.classList.remove('text-green-400', 'border-green-600', 'bg-green-900/30');
+    });
+    
+    if(noteData) {
+        if(noteData.slide && slideBtn) slideBtn.classList.add('text-green-400', 'border-green-600', 'bg-green-900/30');
+        if(noteData.accent && accBtn) accBtn.classList.add('text-green-400', 'border-green-600', 'bg-green-900/30');
     }
 }
 
-function initPlayClock() {
+function renderDrumEditor() {
+    const c = document.getElementById('editor-drum');
+    if(!c) return;
+    c.innerHTML = '';
+    
+    const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+    const currentStepDrums = blk.drums[window.AppState.selectedStep] || [];
+    
+    const kits = (window.drumSynth && window.drumSynth.kits) ? window.drumSynth.kits : [];
+    
+    kits.forEach(k => {
+        const isActive = currentStepDrums.includes(k.id);
+        const b = document.createElement('button');
+        b.className = `w-full py-2 px-3 mb-1 border flex justify-between items-center text-[10px] ${isActive ? 'bg-gray-900 border-green-700 text-green-400' : 'bg-transparent border-gray-800 text-gray-500'}`;
+        b.innerHTML = `<span>${k.name}</span><div class="w-2 h-2 rounded-full" style="background:${k.color}"></div>`;
+        
+        b.onclick = () => {
+            window.initAudioEngine();
+            // Toggle Logic
+            if(isActive) {
+                const idx = currentStepDrums.indexOf(k.id);
+                if(idx > -1) currentStepDrums.splice(idx, 1);
+            } else {
+                currentStepDrums.push(k.id);
+                // Preview sound
+                if(window.drumSynth) window.drumSynth.play(k.id, window.audioCtx.currentTime);
+            }
+            window.updateEditors();
+        };
+        c.appendChild(b);
+    });
+}
+
+// --- CLOCK UI ---
+window.initPlayClockUI = function() {
     const svg = document.getElementById('play-clock-svg');
     if(!svg) return;
-    const steps = window.timeMatrix.totalSteps || 16;
+    const steps = 16;
     const r=45, c=50, circ=2*Math.PI*r, gap=2, dash=(circ/steps)-gap;
     svg.innerHTML = ''; 
     for(let i=0; i<steps; i++) {
@@ -99,10 +197,10 @@ function initPlayClock() {
         el.setAttribute("stroke", "#333"); 
         svg.appendChild(el);
     }
-}
+};
 
-function updatePlayClock(step) {
-    const total = window.timeMatrix.totalSteps;
+window.updatePlayClockUI = function(step) {
+    const total = 16;
     for(let i=0; i<total; i++) {
         const seg = document.getElementById(`clock-seg-${i}`);
         if(!seg) continue;
@@ -110,176 +208,185 @@ function updatePlayClock(step) {
         else if (i < step) { seg.setAttribute("stroke", "#004411"); seg.setAttribute("opacity", "0.5"); } 
         else { seg.setAttribute("stroke", "#222"); seg.setAttribute("opacity", "0.3"); }
     }
-}
+};
 
-// --- RENDERERS ---
-function renderInstrumentTabs() {
-    const c = document.getElementById('instrument-tabs-container');
-    if(!c) return;
-    c.innerHTML = '';
-    bassSynths.forEach(s => {
-        const b = document.createElement('button');
-        const active = AppState.activeView === s.id;
-        b.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${active ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
-        b.innerText = s.id;
-        b.onclick = () => setTab(s.id);
-        c.appendChild(b);
-    });
-    const d = document.createElement('button');
-    const dActive = AppState.activeView === 'drum';
-    d.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${dActive ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
-    d.innerText = "DRUMS";
-    d.onclick = () => setTab('drum');
-    c.appendChild(d);
-}
-
-function setTab(v) {
-    AppState.activeView = v;
-    renderInstrumentTabs();
-    updateEditors();
-    syncControlsFromSynth(v);
-}
-
-function renderTrackBar() { const c = document.getElementById('track-bar'); if(!c) return; c.innerHTML = ''; const blocks = window.timeMatrix.blocks; document.getElementById('display-total-blocks').innerText = blocks.length; document.getElementById('display-current-block').innerText = AppState.editingBlock + 1; blocks.forEach((_, i) => { const el = document.createElement('div'); el.className = `track-block ${i===AppState.editingBlock ? 'track-block-editing' : ''} ${AppState.isPlaying && i===AppState.currentPlayBlock ? 'track-block-playing' : ''}`; el.innerText = i + 1; el.onclick = () => { AppState.editingBlock = i; updateEditors(); renderTrackBar(); }; c.appendChild(el); }); }
-function updateEditors() { const bEd = document.getElementById('editor-bass'); const dEd = document.getElementById('editor-drum'); const info = document.getElementById('step-info-display'); if(info) info.innerText = `STEP ${AppState.selectedStep+1} // ${AppState.activeView.toUpperCase()}`; if(AppState.activeView === 'drum') { bEd.classList.add('hidden'); dEd.classList.remove('hidden'); renderDrumRows(); } else { bEd.classList.remove('hidden'); dEd.classList.add('hidden'); } const slideBtn = document.getElementById('btn-toggle-slide'); const accBtn = document.getElementById('btn-toggle-accent'); if(slideBtn) slideBtn.classList.remove('text-green-400', 'border-green-600'); if(accBtn) accBtn.classList.remove('text-green-400', 'border-green-600'); if(AppState.activeView !== 'drum') { const blk = window.timeMatrix.blocks[AppState.editingBlock]; const noteData = blk.tracks[AppState.activeView] ? blk.tracks[AppState.activeView][AppState.selectedStep] : null; if(noteData) { if(noteData.slide && slideBtn) slideBtn.classList.add('text-green-400', 'border-green-600'); if(noteData.accent && accBtn) accBtn.classList.add('text-green-400', 'border-green-600'); } } window.timeMatrix.selectedStep = AppState.selectedStep; window.timeMatrix.render(AppState.activeView, AppState.editingBlock); }
-function renderDrumRows() { const c = document.getElementById('editor-drum'); if(!c) return; c.innerHTML = ''; const blk = window.timeMatrix.blocks[AppState.editingBlock]; const cur = blk.drums[AppState.selectedStep]; const kits = (window.drumSynth && window.drumSynth.kits) ? window.drumSynth.kits : []; kits.forEach(k => { const act = cur.includes(k.id); const b = document.createElement('button'); b.className = `w-full py-2 px-3 mb-1 border flex justify-between items-center text-[10px] ${act ? 'bg-gray-900 border-green-700 text-green-400' : 'bg-transparent border-gray-800 text-gray-500'}`; b.innerHTML = `<span>${k.name}</span><div class="w-2 h-2 rounded-full" style="background:${k.color}"></div>`; b.onclick = () => { initEngine(); if(act) cur.splice(cur.indexOf(k.id), 1); else { cur.push(k.id); window.drumSynth.play(k.id, audioCtx.currentTime); } updateEditors(); }; c.appendChild(b); }); }
-function renderSynthMenu() { const c = document.getElementById('synth-list-container'); if(!c) return; c.innerHTML = ''; bassSynths.forEach(s => { const r = document.createElement('div'); r.className = 'flex justify-between bg-black p-2 border border-gray-800 text-xs'; r.innerHTML = `<span class="text-green-500">${s.id}</span><button class="text-red-500" onclick="removeBassSynth('${s.id}')">X</button>`; c.appendChild(r); }); }
-
-function togglePanelState() { AppState.panelCollapsed = !AppState.panelCollapsed; const p = document.getElementById('editor-panel'); const btn = document.getElementById('btn-minimize-panel'); if(AppState.panelCollapsed) { p.classList.remove('panel-expanded'); p.classList.add('panel-collapsed'); btn.innerHTML = "&#9650;"; } else { p.classList.remove('panel-collapsed'); p.classList.add('panel-expanded'); btn.innerHTML = "&#9660;"; } }
-function toggleVisualizerMode() { AppState.followPlayback = !AppState.followPlayback; const btn = document.getElementById('btn-toggle-visualizer'); if(AppState.followPlayback) { btn.innerText = "VISUALIZER: ON"; btn.classList.remove('border-gray-700', 'text-gray-400'); btn.classList.add('border-green-500', 'text-green-400', 'bg-green-900/20'); } else { btn.innerText = "VISUALIZER: OFF"; btn.classList.remove('border-green-500', 'text-green-400', 'bg-green-900/20'); btn.classList.add('border-gray-700', 'text-gray-400'); } }
-
-function toggleUIMode() { 
-    AppState.uiMode = AppState.uiMode === 'analog' ? 'digital' : 'analog'; 
-    const btn = document.getElementById('btn-toggle-ui-mode'); 
-    const analogP = document.getElementById('fx-controls-analog'); 
-    const digitalP = document.getElementById('fx-controls-digital'); 
-    
-    if(AppState.uiMode === 'digital') { 
-        btn.innerText = "UI MODE: DIGITAL"; 
-        btn.classList.add('border-green-500', 'text-green-300'); 
-        analogP.classList.add('hidden'); 
-        digitalP.classList.remove('hidden'); 
-    } else { 
-        btn.innerText = "UI MODE: ANALOG"; 
-        btn.classList.remove('border-green-500', 'text-green-300'); 
-        analogP.classList.remove('hidden'); 
-        digitalP.classList.add('hidden'); 
-    } 
-    syncControlsFromSynth(AppState.activeView); 
-}
-
-// --- SYNC CONTROLS ---
-function updateSynthParam(param, value) {
-    const s = window.bassSynths.find(sy => sy.id === AppState.activeView);
-    if(!s) return;
-
-    let finalValue = value;
-    // Map Slider (Hz) to 0-100 for Cutoff
-    if (param === 'cutoff') {
-        const minHz = 100;
-        const maxHz = 5000;
-        const clamped = Math.max(minHz, Math.min(maxHz, value));
-        finalValue = ((clamped - minHz) / (maxHz - minHz)) * 100;
+function blinkLed() {
+    const led = document.getElementById('activity-led');
+    if(led) {
+        led.style.backgroundColor = '#fff';
+        led.style.boxShadow = '0 0 8px #fff';
+        setTimeout(() => { led.style.backgroundColor = ''; led.style.boxShadow = ''; }, 50);
     }
-    
-    if(param === 'distortion') s.setDistortion(finalValue);
-    if(param === 'cutoff') s.setCutoff(finalValue);
-    if(param === 'resonance') s.setResonance(finalValue);
-    if(param === 'envMod') s.setEnvMod(finalValue);
-    if(param === 'decay') s.setDecay(finalValue);
-
-    syncControlsFromSynth(AppState.activeView);
 }
 
-function syncControlsFromSynth(viewId) {
+// --- CONTROL BINDINGS ---
+window.setupControlListeners = function() {
+    
+    // 1. Piano Keys
+    document.querySelectorAll('.piano-key').forEach(k => {
+        k.onclick = () => {
+            window.initAudioEngine(); // Ensure audio starts on interaction
+            
+            const note = k.dataset.note;
+            const activeId = window.AppState.activeView;
+            
+            // Solo actuar si estamos en vista de bajo
+            if(activeId === 'drum') return;
+
+            // Buscar sinte
+            const synth = window.bassSynths.find(s => s.id === activeId);
+            if(!synth) {
+                console.error("Synth not found:", activeId);
+                return;
+            }
+
+            // Datos de la celda actual
+            const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+            // Asegurar que existe el track
+            if(!blk.tracks[activeId]) window.timeMatrix.registerTrack(activeId);
+            
+            const currentStepData = blk.tracks[activeId][window.AppState.selectedStep];
+            
+            // Guardar nueva nota (preservando slide/accent si existían)
+            blk.tracks[activeId][window.AppState.selectedStep] = { 
+                note: note, 
+                octave: window.AppState.currentOctave, 
+                slide: currentStepData ? currentStepData.slide : false, 
+                accent: currentStepData ? currentStepData.accent : false 
+            };
+            
+            // Reproducir sonido
+            synth.play(note, window.AppState.currentOctave, window.audioCtx.currentTime);
+            
+            // Actualizar UI
+            window.updateEditors();
+        };
+    });
+
+    // 2. Modifiers (Slide/Accent)
+    const toggleMod = (prop) => {
+        if(window.AppState.activeView === 'drum') return;
+        const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+        const track = blk.tracks[window.AppState.activeView];
+        if(!track) return;
+        
+        const note = track[window.AppState.selectedStep];
+        if(note) {
+            note[prop] = !note[prop];
+            window.updateEditors();
+        }
+    };
+    
+    const btnSlide = document.getElementById('btn-toggle-slide');
+    if(btnSlide) btnSlide.onclick = () => toggleMod('slide');
+    
+    const btnAcc = document.getElementById('btn-toggle-accent');
+    if(btnAcc) btnAcc.onclick = () => toggleMod('accent');
+
+    // 3. Clear Note
+    const btnDel = document.getElementById('btn-delete-note');
+    if(btnDel) btnDel.onclick = () => {
+        const id = window.AppState.activeView;
+        if(id === 'drum') return;
+        const blk = window.timeMatrix.blocks[window.AppState.editingBlock];
+        if(blk.tracks[id]) {
+            blk.tracks[id][window.AppState.selectedStep] = null;
+            window.updateEditors();
+        }
+    };
+
+    // 4. Sliders & Knobs Binding
+    bindSynthControls();
+};
+
+function bindSynthControls() {
+    // Función de actualización unificada
+    const updateParam = (param, value) => {
+        const s = window.bassSynths.find(sy => sy.id === window.AppState.activeView);
+        if(!s) return;
+
+        let finalVal = value;
+        // Mapping especial para Cutoff (Hz a %)
+        if(param === 'cutoff' && value > 100) {
+             // Asumimos que viene del slider analógico en Hz (100-5000)
+             // Convertir a 0-100 para el motor interno
+             const min = 100, max = 5000;
+             finalVal = ((value - min) / (max - min)) * 100;
+        }
+
+        // Setters
+        if(param === 'distortion') s.setDistortion(finalVal);
+        if(param === 'cutoff') s.setCutoff(finalVal);
+        if(param === 'resonance') s.setResonance(finalVal);
+        if(param === 'envMod') s.setEnvMod(finalVal);
+        if(param === 'decay') s.setDecay(finalVal);
+        
+        // Sincronizar todos los inputs visuales
+        window.syncControlsFromSynth(s.id);
+    };
+
+    // Binding Helper
+    const bind = (id, param) => {
+        const el = document.getElementById(id);
+        if(el) el.oninput = (e) => updateParam(param, parseFloat(e.target.value));
+    };
+    const bindChange = (id, param) => {
+        const el = document.getElementById(id);
+        if(el) el.onchange = (e) => updateParam(param, parseFloat(e.target.value));
+    };
+
+    // Analog Sliders
+    bind('dist-slider', 'distortion');
+    bind('cutoff-slider', 'cutoff');
+    bind('res-slider', 'resonance');
+    bind('env-slider', 'envMod');
+    bind('dec-slider', 'decay');
+
+    // Digital Inputs
+    bindChange('dist-digital', 'distortion');
+    bindChange('cutoff-digital', 'cutoff');
+    // Resonancia digital muestra %, el motor usa 0-20. 
+    // Aquí simplificamos: el input digital envía 0-100, el motor lo recibe.
+    // Necesitamos asegurar que el setter del motor maneje la escala.
+    bindChange('res-digital', 'resonance'); 
+    bindChange('env-digital', 'envMod');
+    bindChange('dec-digital', 'decay');
+}
+
+// Sincronización UI -> Estado del Sinte
+window.syncControlsFromSynth = function(viewId) {
     const s = window.bassSynths.find(sy => sy.id === viewId);
     if(!s) return;
+    
+    const p = s.params; // { distortion: 0-100, cutoff: 0-100, ... }
 
     const setVal = (id, val) => {
         const el = document.getElementById(id);
         if(el) el.value = Math.round(val);
     };
 
-    const p = s.params;
-
     // Analog
     setVal('dist-slider', p.distortion);
     setVal('res-slider', p.resonance);
     setVal('env-slider', p.envMod);
     setVal('dec-slider', p.decay);
+    
+    // Cutoff Slider espera Hz
     const cutoffHz = ((p.cutoff / 100) * 4900) + 100;
     setVal('cutoff-slider', cutoffHz);
 
-    // Digital
+    // Digital (Direct 0-100)
     setVal('dist-digital', p.distortion);
     setVal('cutoff-digital', p.cutoff);
-    setVal('res-digital', p.resonance * 5); 
+    setVal('res-digital', p.resonance); 
     setVal('env-digital', p.envMod);
     setVal('dec-digital', p.decay);
-
-    const wvBtn = document.getElementById('btn-waveform');
-    if(wvBtn) {
-        if(p.waveform === 'square') wvBtn.innerHTML = '<span class="text-xl font-bold leading-none mb-0.5">Π</span><span>SQR</span>';
-        else wvBtn.innerHTML = '<span class="text-xl font-bold leading-none mb-0.5">~</span><span>SAW</span>';
+    
+    // Waveform
+    const btnW = document.getElementById('btn-waveform');
+    if(btnW) {
+        btnW.innerHTML = p.waveform === 'square' 
+            ? '<span class="text-xl font-bold leading-none mb-0.5">Π</span><span>SQR</span>' 
+            : '<span class="text-xl font-bold leading-none mb-0.5">~</span><span>SAW</span>';
     }
-}
-
-function setupDigitalRepeaters() {
-    const buttons = document.querySelectorAll('.dfx-btn');
-    if(!buttons.length) return;
-    buttons.forEach(btn => {
-        let intervalId = null;
-        let timeoutId = null;
-        const target = btn.dataset.target; 
-        const dir = parseInt(btn.dataset.dir); 
-
-        const changeVal = () => {
-            const s = bassSynths.find(sy => sy.id === AppState.activeView);
-            if(!s) return;
-            
-            let current = 0;
-            if(target === 'distortion') current = s.params.distortion;
-            else if(target === 'envMod') current = s.params.envMod;
-            else if(target === 'decay') current = s.params.decay;
-            else if(target === 'resonance') current = s.params.resonance * 5; 
-            else if(target === 'cutoff') current = s.params.cutoff; 
-
-            let next = Math.max(0, Math.min(100, current + dir));
-            
-            if(target === 'distortion') s.setDistortion(next);
-            else if(target === 'envMod') s.setEnvMod(next);
-            else if(target === 'decay') s.setDecay(next);
-            else if(target === 'resonance') s.setResonance(next / 5);
-            else if(target === 'cutoff') s.setCutoff(next);
-            
-            syncControlsFromSynth(AppState.activeView);
-        };
-
-        const startRepeat = () => {
-            changeVal(); 
-            timeoutId = setTimeout(() => {
-                intervalId = setInterval(changeVal, 100); 
-            }, 400); 
-        };
-
-        const stopRepeat = () => {
-            clearTimeout(timeoutId);
-            clearInterval(intervalId);
-        };
-
-        btn.addEventListener('mousedown', startRepeat);
-        btn.addEventListener('mouseup', stopRepeat);
-        btn.addEventListener('mouseleave', stopRepeat);
-        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startRepeat(); });
-        btn.addEventListener('touchend', stopRepeat);
-    });
-}
-
-function toggleWaveform() {
-    const s = bassSynths.find(sy => sy.id === AppState.activeView);
-    if(s) {
-        const next = s.params.waveform === 'sawtooth' ? 'square' : 'sawtooth';
-        s.setWaveform(next);
-        syncControlsFromSynth(AppState.activeView);
-    }
-}
+};
