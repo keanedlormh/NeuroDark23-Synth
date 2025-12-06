@@ -1,5 +1,6 @@
 /*
- * NEURODARK 23 - MAIN CONTROLLER v36
+ * NEURODARK 23 - MAIN CONTROLLER v37
+ * Central Hub: Global State
  */
 
 window.AppState = {
@@ -16,38 +17,33 @@ window.AppState = {
     followPlayback: false
 };
 
-window.Main = {
-    togglePlay: function() {
-        window.AudioEngine.toggleTransport();
-    },
-
-    addBass: function() {
-        const id = `bass-${window.AudioEngine.synths.length + 1}`;
-        window.AudioEngine.addSynth(id);
-        window.timeMatrix.registerTrack(id);
-        window.AppState.activeView = id;
-        window.UI.renderAll();
-    }
-};
-
+// Bootstrap Sequence
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Audio Engine
-    window.AudioEngine.init(); 
+    console.log("[Main] Bootstrapping...");
     
-    // 2. UI
+    // 1. Validar Clases
+    if(!window.TimeMatrix || typeof window.BassSynth === 'undefined') {
+        console.error("CRITICAL: Missing Synth Classes");
+        return;
+    }
+
+    // 2. Inicializar Matriz de Tiempo Global
+    window.timeMatrix = new window.TimeMatrix();
+
+    // 3. Inicializar Audio Engine (Lazy)
+    window.AudioEngine.initData(); // Crea los arrays de sintes pero no el contexto
+
+    // 4. Inicializar UI
     window.UI.init();
-    
-    // 3. Unlock Policy
+
+    // 5. Global Unlocks (Click Policy)
     const unlock = () => {
-        window.AudioEngine.init();
-        if(window.AudioEngine.ctx && window.AudioEngine.ctx.state === 'running') {
-            document.removeEventListener('click', unlock);
-            document.removeEventListener('touchstart', unlock);
-        }
+        window.AudioEngine.startContext();
+        document.removeEventListener('click', unlock);
+        document.removeEventListener('touchstart', unlock);
     };
     document.addEventListener('click', unlock);
     document.addEventListener('touchstart', unlock);
-    
-    // Helper global para HTML
-    window.addBassSynth = window.Main.addBass;
+
+    console.log("[Main] System Ready");
 });
