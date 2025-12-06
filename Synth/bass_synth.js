@@ -1,6 +1,7 @@
 /*
  * BASS SYNTH MODULE (Voice Controller)
  * Orchestrates Oscillator, Filter (via FX), and VCA.
+ * Refined VCA envelope to prevent clicking/cutting off filter tails.
  */
 
 class BassSynth {
@@ -9,12 +10,11 @@ class BassSynth {
         this.ctx = null;
         this.output = null; 
         this.fxChain = null; 
-        
         this.lastFreq = 0;
         
         this.params = {
             distortion: 20,
-            cutoff: 800,
+            cutoff: 40,    // 0-100 scale now (handled by FX)
             resonance: 8,
             envMod: 60,
             decay: 40,
@@ -25,7 +25,7 @@ class BassSynth {
     init(audioContext, destinationNode) {
         this.ctx = audioContext;
         
-        // 1. Setup FX Chain
+        // Setup Distortion Chain
         if (typeof window.BassDistortion !== 'undefined') {
             this.fxChain = new window.BassDistortion(this.ctx);
             this.fxChain.setDistortion(this.params.distortion);
@@ -37,10 +37,8 @@ class BassSynth {
         }
     }
 
-    setDistortion(val) {
-        this.params.distortion = val;
-        if (this.fxChain) this.fxChain.setDistortion(val);
-    }
+    // --- Params ---
+    setDistortion(val) { this.params.distortion = val; if(this.fxChain) this.fxChain.setDistortion(val); }
     setCutoff(val) { this.params.cutoff = val; }
     setResonance(val) { this.params.resonance = val; }
     setEnvMod(val) { this.params.envMod = val; }
@@ -50,21 +48,23 @@ class BassSynth {
     play(note, octave, time, duration = 0.25, slide = false, accent = false) {
         if (!this.ctx || !this.output) return;
 
-        // Frecuencia
+        // 1. Frequency Calc
         const noteMap = {'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11};
         const noteIndex = noteMap[note];
         if (noteIndex === undefined) return;
         const midiNote = (octave + 1) * 12 + noteIndex;
         const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
 
-        // Nodos
+        // 2. Nodes
         const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain(); // VCA
+        const vca = this.ctx.createGain();
         
-        // Oscilador
+        // 3. Oscillator (with subtle Analog Drift)
         osc.type = this.params.waveform;
-        
-        // Portamento (Slide)
+        // Tiny random detune (+/- 2 cents) makes it sound less "plastic"
+        osc.detune.value = (Math.random() * 4) - 2; 
+
+        // Slide / Portamento Logic
         if (!this.lastFreq) this.lastFreq = freq;
         if (slide) {
             osc.frequency.setValueAtTime(this.lastFreq, time);
@@ -74,7 +74,7 @@ class BassSynth {
         }
         this.lastFreq = freq;
 
-        // Filtro (FX Module)
+        // 4. Filter Generation
         let filterNode = null;
         let filterDecay = 0.5;
 
@@ -83,44 +83,52 @@ class BassSynth {
             filterNode = fResult.node;
             filterDecay = fResult.decayTime;
         } else {
-            filterNode = this.ctx.createBiquadFilter(); 
-            filterNode.frequency.value = this.params.cutoff;
+            filterNode = this.ctx.createBiquadFilter();
+            filterNode.frequency.value = 1000; 
         }
 
-        // VCA (Amplifier Envelope)
-        // La clave para una buena distorsión es cuánto nivel enviamos
-        // Enviamos un nivel un poco más bajo para tener "headroom" y que el circuito de distorsión trabaje dinámicamente
+        // 5. VCA Envelope (Volume) - CRITICAL FIX
+        // The VCA must stay open slightly longer than the filter envelope
+        // to hear the resonant "zap" fade out naturally.
+        
+        // Lower gain when accent is OFF to make Accent pop more
         const peakVol = accent ? 0.8 : 0.6; 
         
-        gain.gain.setValueAtTime(0, time);
+        vca.gain.setValueAtTime(0, time);
         
         if (slide) {
-            // Legato: Sostenido completo
-            gain.gain.linearRampToValueAtTime(peakVol, time + 0.02);
-            gain.gain.setValueAtTime(peakVol, time + duration); // Sustain
-            gain.gain.linearRampToValueAtTime(0, time + duration + 0.05); // Quick Release
+            // Legato: Full sustain
+            vca.gain.linearRampToValueAtTime(peakVol, time + 0.02);
+            vca.gain.setValueAtTime(peakVol, time + duration);
+            vca.gain.linearRampToValueAtTime(0, time + duration + 0.05);
         } else {
-            // Staccato: La caída de volumen sigue al filtro para ese sonido "plucky"
-            // Importante: Dejamos un poco de cola para que la distorsión "respire"
-            const release = Math.max(0.15, filterDecay); 
+            // Staccato: Punchy attack
+            vca.gain.linearRampToValueAtTime(peakVol, time + 0.005);
             
-            gain.gain.linearRampToValueAtTime(peakVol, time + 0.005); // Attack rápido
-            gain.gain.exponentialRampToValueAtTime(0.001, time + release); // Decay natural
+            // Release: Tightly coupled with filter decay but with a minimum floor
+            // so short filter zaps don't get cut by volume silence
+            const releaseTime = Math.max(0.15, filterDecay * 1.2); 
+            
+            // Use exponential ramp for natural fade
+            vca.gain.setTargetAtTime(0, time + 0.05, releaseTime / 4);
         }
 
-        // Routing: OSC -> FILTER -> VCA -> DISTORTION
+        // 6. Routing
         osc.connect(filterNode);
-        filterNode.connect(gain);
-        gain.connect(this.output);
+        filterNode.connect(vca);
+        vca.connect(this.output); // Into Distortion
 
+        // 7. Lifecycle
         osc.start(time);
-        osc.stop(time + duration + 1.0); // Margen de seguridad largo
+        // Stop oscillator only after volume is fully silent
+        osc.stop(time + duration + 1.0); 
 
+        // Cleanup
         osc.onended = () => {
             try {
                 osc.disconnect();
-                gain.disconnect();
-                if(filterNode) filterNode.disconnect();
+                vca.disconnect();
+                filterNode.disconnect();
             } catch(e) {}
         };
     }
