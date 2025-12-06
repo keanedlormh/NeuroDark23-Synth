@@ -610,5 +610,29 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     });
 
+    // NEW: Binding for Digital Inputs (Manual Typing)
+    const bindDigitalInput = (id, param) => {
+        const el = document.getElementById(id);
+        if(el) {
+            el.onchange = (e) => {
+                let val = parseInt(e.target.value);
+                if(isNaN(val)) val = 0;
+                val = Math.max(0, Math.min(100, val)); // Clamp 0-100
+                
+                // Convert 0-100 range to synth param range
+                let synthVal = val;
+                if(param === 'cutoff') synthVal = (val / 100 * 4950) + 50;
+                else if(param === 'resonance') synthVal = val / 5;
+                
+                updateSynthParam(param, synthVal);
+            };
+        }
+    };
+    bindDigitalInput('dist-digital', 'distortion');
+    bindDigitalInput('cutoff-digital', 'cutoff');
+    bindDigitalInput('res-digital', 'resonance');
+    bindDigitalInput('env-digital', 'envMod');
+    bindDigitalInput('dec-digital', 'decay');
+
     bootstrap();
 });
