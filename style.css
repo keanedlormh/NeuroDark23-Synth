@@ -70,10 +70,43 @@ body {
 .step-playing { background-color: rgba(255, 255, 255, 0.15) !important; border-color: rgba(255,255,255,0.5) !important; }
 .has-bass { background: radial-gradient(circle, rgba(0,255,65,0.15) 0%, rgba(0,0,0,0) 80%); border-color: var(--neon-green); color: var(--neon-green); box-shadow: 0 0 5px rgba(0,255,65,0.2); }
 
-.piano-key { border-radius: 3px; font-size: 10px; font-weight: bold; }
-.white-key { background: #ccc; color: #000; height: 100%; border-bottom: 3px solid #999; }
-.black-key { background: #222; color: #666; border: 1px solid #444; border-bottom: 3px solid #000; height: 85%; margin-top: 0; }
-.piano-key:active { background: var(--neon-green) !important; color: #000 !important; border-bottom-color: #004400; transform: translateY(2px); }
+/* PIANO KEYS UPDATED */
+.piano-key { 
+    border-radius: 0 0 3px 3px; 
+    font-size: 10px; 
+    font-weight: bold; 
+    cursor: pointer;
+    transition: transform 0.05s ease-in-out, background-color 0.1s;
+}
+
+.white-key { 
+    background: #ccc; 
+    color: #000; 
+    border: 1px solid #999;
+    border-top: none;
+    border-bottom: 4px solid #888; 
+    /* Height is controlled by flex parent in HTML */
+}
+.white-key:active {
+    background: var(--neon-green);
+    border-bottom-color: #004400;
+    transform: translateY(2px);
+}
+
+.black-key { 
+    background: #111; 
+    color: #666; 
+    border: 1px solid #333; 
+    border-bottom: 3px solid #000; 
+    height: 65%; /* Adjusted for relative container */
+    /* Positioning is handled by utility classes in HTML */
+}
+.black-key:active {
+    background: var(--neon-green) !important; 
+    color: #000 !important; 
+    border-bottom-color: #004400; 
+    transform: translateY(2px); /* Maintain translation with absolute pos */
+}
 
 /* PANEL ESTADOS */
 .panel-expanded { 
@@ -122,6 +155,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px
     border-radius: 2px;
 }
 
+/* INPUT NUMBER STYLING (Hide Spinners) */
 .dfx-value {
     width: 100%;
     background: transparent;
@@ -131,6 +165,13 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px
     font-weight: bold;
     text-align: center;
     outline: none;
+    -moz-appearance: textfield; /* Firefox */
+}
+/* Webkit (Chrome/Safari/Edge) spinner hiding */
+.dfx-value::-webkit-outer-spin-button,
+.dfx-value::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 .dfx-buttons {
