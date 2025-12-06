@@ -1,5 +1,5 @@
 /*
- * NEURODARK 23 - NATIVE CORE v26 (Hotfix: Missing Tabs Logic)
+ * NEURODARK 23 - NATIVE CORE v27 (Restored & Fixed)
  */
 
 const AppState = {
@@ -72,10 +72,10 @@ function bootstrap() {
             if(window.timeMatrix.registerTrack) window.timeMatrix.registerTrack('bass-1');
         }
 
-        renderInstrumentTabs(); // Ahora sí está definida abajo
+        renderInstrumentTabs(); 
         renderTrackBar();
         updateEditors();
-        initPlayClock();
+        initPlayClock(); // Esta función ahora existe (ver abajo)
         setupDigitalRepeaters();
         
         // Initial Sync
@@ -142,6 +142,127 @@ function addBassSynth() {
     window.timeMatrix.registerTrack(id);
     renderSynthMenu(); renderInstrumentTabs(); setTab(id);
     window.logToScreen(`+Synth: ${id}`);
+}
+
+// --- CLOCK & SEQUENCER (RESTORED) ---
+function initPlayClock() {
+    const svg = document.getElementById('play-clock-svg');
+    if(!svg) return;
+    const steps = window.timeMatrix.totalSteps || 16;
+    const r=45, c=50, circ=2*Math.PI*r, gap=2, dash=(circ/steps)-gap;
+    svg.innerHTML = ''; 
+    for(let i=0; i<steps; i++) {
+        const el = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        el.setAttribute("r", r); el.setAttribute("cx", c); el.setAttribute("cy", c);
+        el.setAttribute("fill", "transparent"); el.setAttribute("stroke-width", "4");
+        el.setAttribute("stroke-dasharray", `${dash} ${circ - dash}`);
+        el.setAttribute("transform", `rotate(${(360/steps)*i}, ${c}, ${c})`);
+        el.setAttribute("id", `clock-seg-${i}`);
+        el.setAttribute("stroke", "#333"); 
+        svg.appendChild(el);
+    }
+}
+
+function updatePlayClock(step) {
+    const total = window.timeMatrix.totalSteps;
+    for(let i=0; i<total; i++) {
+        const seg = document.getElementById(`clock-seg-${i}`);
+        if(!seg) continue;
+        if (i === step) { seg.setAttribute("stroke", "#00ff41"); seg.setAttribute("opacity", "1"); } 
+        else if (i < step) { seg.setAttribute("stroke", "#004411"); seg.setAttribute("opacity", "0.5"); } 
+        else { seg.setAttribute("stroke", "#222"); seg.setAttribute("opacity", "0.3"); }
+    }
+}
+
+function nextNote() {
+    const secPerBeat = 60.0 / AppState.bpm;
+    const secPerStep = secPerBeat / 4;
+    nextNoteTime += secPerStep;
+    AppState.currentPlayStep++;
+    if(AppState.currentPlayStep >= window.timeMatrix.totalSteps) {
+        AppState.currentPlayStep = 0;
+        AppState.currentPlayBlock++;
+        if(AppState.currentPlayBlock >= window.timeMatrix.blocks.length) AppState.currentPlayBlock = 0;
+    }
+}
+
+function scheduleNote(step, block, time) {
+    visualQueue.push({ step, block, time });
+    const data = window.timeMatrix.getStepData(step, block);
+    if(data.drums && window.drumSynth) data.drums.forEach(id => window.drumSynth.play(id, time));
+    if(data.tracks) Object.keys(data.tracks).forEach(tid => {
+        const n = data.tracks[tid][step];
+        if(n) {
+            const s = bassSynths.find(sy => sy.id === tid);
+            if(s) s.play(n.note, n.octave, time, 0.25, n.slide, n.accent);
+        }
+    });
+}
+
+function scheduler() {
+    while(nextNoteTime < audioCtx.currentTime + LOOKAHEAD) {
+        scheduleNote(AppState.currentPlayStep, AppState.currentPlayBlock, nextNoteTime);
+        nextNote();
+    }
+}
+
+function drawLoop() {
+    const t = audioCtx.currentTime;
+    while(visualQueue.length && visualQueue[0].time <= t) {
+        const ev = visualQueue.shift();
+        if(ev.step === 0) renderTrackBar();
+        if(lastDrawnStep !== ev.step) {
+            updatePlayClock(ev.step);
+            if(AppState.followPlayback && ev.block !== AppState.editingBlock) {
+                AppState.editingBlock = ev.block;
+                updateEditors();
+                renderTrackBar();
+            }
+            if(ev.block === AppState.editingBlock) {
+                window.timeMatrix.highlightPlayingStep(ev.step);
+                if(ev.step % 4 === 0) blinkLed();
+            } else {
+                window.timeMatrix.highlightPlayingStep(-1);
+            }
+            lastDrawnStep = ev.step;
+        }
+    }
+    if(AppState.isPlaying) requestAnimationFrame(drawLoop);
+}
+
+function blinkLed() {
+    const led = document.getElementById('activity-led');
+    if(led) {
+        led.style.backgroundColor = '#fff';
+        led.style.boxShadow = '0 0 8px #fff';
+        setTimeout(() => { led.style.backgroundColor = ''; led.style.boxShadow = ''; }, 50);
+    }
+}
+
+function toggleTransport() { 
+    initEngine(); 
+    AppState.isPlaying = !AppState.isPlaying; 
+    const btn = document.getElementById('btn-play'); 
+    if(AppState.isPlaying) { 
+        btn.innerHTML = "&#10074;&#10074;"; 
+        btn.classList.add('border-green-500', 'text-green-500'); 
+        AppState.currentPlayStep = 0; 
+        AppState.currentPlayBlock = AppState.editingBlock; 
+        nextNoteTime = audioCtx.currentTime + 0.1; 
+        visualQueue = []; 
+        if(clockWorker) clockWorker.postMessage("start"); 
+        drawLoop(); 
+        window.logToScreen("PLAY"); 
+    } else { 
+        btn.innerHTML = "&#9658;"; 
+        btn.classList.remove('border-green-500', 'text-green-500'); 
+        if(clockWorker) clockWorker.postMessage("stop"); 
+        cancelAnimationFrame(drawFrameId); 
+        window.timeMatrix.highlightPlayingStep(-1); 
+        updatePlayClock(-1); 
+        renderTrackBar(); 
+        window.logToScreen("STOP"); 
+    } 
 }
 
 // --- SYNC & CONTROL MAPPING ---
@@ -342,8 +463,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- RENDERERS ---
-
-// Esta es la función que faltaba
 function renderInstrumentTabs() {
     const c = document.getElementById('instrument-tabs-container');
     if(!c) return;
@@ -364,7 +483,6 @@ function renderInstrumentTabs() {
     c.appendChild(d);
 }
 
-// Y esta es la función setTab que también es necesaria
 function setTab(v) {
     AppState.activeView = v;
     renderInstrumentTabs();
@@ -459,7 +577,6 @@ function toggleUIMode() {
     syncControlsFromSynth(AppState.activeView); 
 }
 
-function toggleTransport() { initEngine(); AppState.isPlaying = !AppState.isPlaying; const btn = document.getElementById('btn-play'); if(AppState.isPlaying) { btn.innerHTML = "&#10074;&#10074;"; btn.classList.add('border-green-500', 'text-green-500'); AppState.currentPlayStep = 0; AppState.currentPlayBlock = AppState.editingBlock; nextNoteTime = audioCtx.currentTime + 0.1; visualQueue = []; if(clockWorker) clockWorker.postMessage("start"); drawLoop(); window.logToScreen("PLAY"); } else { btn.innerHTML = "&#9658;"; btn.classList.remove('border-green-500', 'text-green-500'); if(clockWorker) clockWorker.postMessage("stop"); cancelAnimationFrame(drawFrameId); window.timeMatrix.highlightPlayingStep(-1); updatePlayClock(-1); renderTrackBar(); window.logToScreen("STOP"); } }
 // --- EXPORT RENDER LOGIC ---
 async function renderAudio() {
     if(AppState.isPlaying) toggleTransport();
