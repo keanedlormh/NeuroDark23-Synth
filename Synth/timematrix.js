@@ -1,5 +1,6 @@
 /**
- * TIME MATRIX MODULE (Log Edition)
+ * TIME MATRIX MODULE
+ * Updated for Modular Architecture
  */
 
 class TimeMatrix {
@@ -9,11 +10,10 @@ class TimeMatrix {
         this.blocks = [];
         this.containerId = 'matrix-container';
         this.selectedStep = 0;
-        this.clipboard = null; // Memoria para Copy/Paste
+        this.clipboard = null;
         this.addBlock();
     }
 
-    // ... (Métodos de datos iguales que v19) ...
     init() { this.container = document.getElementById(this.containerId); return !!this.container; }
     
     registerTrack(id) { this.blocks.forEach(b=>{ if(!b.tracks[id]) b.tracks[id] = new Array(this.totalSteps).fill(null); }); }
@@ -26,46 +26,22 @@ class TimeMatrix {
         this.blocks.push({ tracks: newTracks, drums: new Array(this.totalSteps).fill().map(()=>[]) });
     }
     
-    duplicateBlock(idx) {
-        if(!this.blocks[idx]) return;
-        const org = this.blocks[idx];
-        const newTracks = {};
-        Object.keys(org.tracks).forEach(k => {
-            newTracks[k] = org.tracks[k].map(n => n ? {...n} : null);
-        });
-        this.blocks.splice(idx+1, 0, { tracks: newTracks, drums: org.drums.map(d=>[...d]) });
-    }
-
-    // --- NUEVO: SISTEMA DE CLIPBOARD ---
-    
+    // ... Copy/Paste/Move logic remains same ...
     copyToClipboard(idx) {
         if (!this.blocks[idx]) return false;
         const org = this.blocks[idx];
-        
-        // Deep Copy Manual para evitar referencias
         const newTracks = {};
-        Object.keys(org.tracks).forEach(k => {
-            newTracks[k] = org.tracks[k].map(n => n ? {...n} : null);
-        });
-        const newDrums = org.drums.map(d => [...d]);
-
-        this.clipboard = { tracks: newTracks, drums: newDrums };
+        Object.keys(org.tracks).forEach(k => newTracks[k] = org.tracks[k].map(n => n ? {...n} : null));
+        this.clipboard = { tracks: newTracks, drums: org.drums.map(d => [...d]) };
         return true;
     }
 
     pasteFromClipboard(idx) {
         if (!this.clipboard) return false;
-        
-        // Deep Copy desde el Clipboard (para poder pegar múltiples veces sin vincularlos)
         const source = this.clipboard;
         const newTracks = {};
-        Object.keys(source.tracks).forEach(k => {
-            newTracks[k] = source.tracks[k].map(n => n ? {...n} : null);
-        });
-        const newDrums = source.drums.map(d => [...d]);
-
-        // Insertar después del índice seleccionado
-        this.blocks.splice(idx + 1, 0, { tracks: newTracks, drums: newDrums });
+        Object.keys(source.tracks).forEach(k => newTracks[k] = source.tracks[k].map(n => n ? {...n} : null));
+        this.blocks.splice(idx + 1, 0, { tracks: newTracks, drums: source.drums.map(d => [...d]) });
         return true;
     }
     
@@ -103,7 +79,6 @@ class TimeMatrix {
             const el = document.createElement('div');
             el.className = 'step-box';
             
-            // APLICAR CLASE DE SELECCIÓN NARANJA
             if (i === this.selectedStep) {
                 el.classList.add('step-selected-orange');
             }
@@ -116,7 +91,6 @@ class TimeMatrix {
             }
 
             el.onclick = () => {
-                if(window.logToScreen) window.logToScreen(`Matrix Click: Step ${i+1}`);
                 const event = new CustomEvent('stepSelect', { detail: { index: i } });
                 window.dispatchEvent(event);
             };
@@ -127,7 +101,6 @@ class TimeMatrix {
     drawNote(el, data, i) {
         if(data) {
             el.classList.add('has-bass');
-            // MODIFICADO: Formato para Slide (~) y Accent (^)
             const noteStr = `${data.accent ? '^' : ''}${data.note}${data.slide ? '~' : ''}`;
             el.innerHTML = `<div class="flex flex-col items-center pointer-events-none"><span class="text-xl font-bold">${noteStr}</span><span class="text-[10px] opacity-70">${data.octave}</span></div>`;
         } else {
@@ -140,11 +113,17 @@ class TimeMatrix {
         el.classList.remove('has-bass');
         if(drums && drums.length) {
             let html = '<div class="flex flex-wrap gap-1 justify-center px-1 pointer-events-none">';
-            const kits = (window.drumSynth && window.drumSynth.kits) ? window.drumSynth.kits : [];
-            drums.forEach(id => {
-                const k = kits.find(x=>x.id===id);
-                const c = k ? k.color : '#fff';
-                html += `<div class="w-2 h-2 rounded-full shadow-[0_0_5px_${c}]" style="background:${c}"></div>`;
+            
+            // FIX: Access AudioEngine.drums instead of global window.drumSynth if possible
+            // Fallback to prototype logic if instance not ready
+            const drumInstance = window.AudioEngine ? window.AudioEngine.drums : null;
+            const kits = drumInstance ? drumInstance.kits : (window.DrumSynth ? window.DrumSynth.prototype.kits : []);
+            
+            // If kits is undefined (e.g. DrumSynth not loaded), use empty array
+            (kits || []).forEach(k => {
+                if(drums.includes(k.id)) {
+                    html += `<div class="w-2 h-2 rounded-full shadow-[0_0_5px_${k.color}]" style="background:${k.color}"></div>`;
+                }
             });
             el.innerHTML = html + '</div>';
         } else {
