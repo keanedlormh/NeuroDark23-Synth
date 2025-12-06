@@ -1,6 +1,6 @@
 /**
  * TIME MATRIX MODULE
- * Updated for Modular Architecture
+ * Adapted for Modular Architecture
  */
 
 class TimeMatrix {
@@ -26,7 +26,6 @@ class TimeMatrix {
         this.blocks.push({ tracks: newTracks, drums: new Array(this.totalSteps).fill().map(()=>[]) });
     }
     
-    // ... Copy/Paste/Move logic remains same ...
     copyToClipboard(idx) {
         if (!this.blocks[idx]) return false;
         const org = this.blocks[idx];
@@ -114,13 +113,14 @@ class TimeMatrix {
         if(drums && drums.length) {
             let html = '<div class="flex flex-wrap gap-1 justify-center px-1 pointer-events-none">';
             
-            // FIX: Access AudioEngine.drums instead of global window.drumSynth if possible
-            // Fallback to prototype logic if instance not ready
-            const drumInstance = window.AudioEngine ? window.AudioEngine.drums : null;
-            const kits = drumInstance ? drumInstance.kits : (window.DrumSynth ? window.DrumSynth.prototype.kits : []);
+            // ACCESO CORREGIDO: Busca en AudioEngine.drums si existe
+            const drumInstance = window.AudioEngine && window.AudioEngine.drums 
+                ? window.AudioEngine.drums 
+                : (window.DrumSynth ? new window.DrumSynth() : null);
             
-            // If kits is undefined (e.g. DrumSynth not loaded), use empty array
-            (kits || []).forEach(k => {
+            const kits = drumInstance ? drumInstance.kits : [];
+            
+            kits.forEach(k => {
                 if(drums.includes(k.id)) {
                     html += `<div class="w-2 h-2 rounded-full shadow-[0_0_5px_${k.color}]" style="background:${k.color}"></div>`;
                 }
@@ -141,4 +141,5 @@ class TimeMatrix {
     }
 }
 
-window.timeMatrix = new TimeMatrix();
+// Exponer Clase
+window.TimeMatrix = TimeMatrix;
