@@ -1,18 +1,16 @@
 /*
  * BASS SYNTH MODULE (Voice Controller)
  * Orchestrates Oscillator, Filter (via FX), and VCA.
- * Updated for Extended Sustain and Drift.
  */
 
 class BassSynth {
     constructor(id = 'bass-1') {
         this.id = id;
         this.ctx = null;
-        this.output = null; // To Master
-        this.fxChain = null; // Distortion instance
+        this.output = null; 
+        this.fxChain = null; 
         
-        // Internal State for Portamento
-        this.lastFreq = 110.0; 
+        this.lastFreq = 0;
         
         this.params = {
             distortion: 20,
@@ -27,26 +25,18 @@ class BassSynth {
     init(audioContext, destinationNode) {
         this.ctx = audioContext;
         
-        // 1. Setup Output & Distortion Chain
-        try {
-            if (typeof window.BassDistortion !== 'undefined') {
-                this.fxChain = new window.BassDistortion(this.ctx);
-                this.fxChain.setDistortion(this.params.distortion);
-                // Connect FX -> Destination
-                this.fxChain.connect(destinationNode);
-                // Synth output acts as input for the FX chain
-                this.output = this.fxChain.input; 
-            } else {
-                console.warn("BassDistortion module not loaded. Using bypass.");
-                this.output = this.ctx.createGain();
-                this.output.connect(destinationNode);
-            }
-        } catch (e) {
-            console.error("Init Error:", e);
+        // 1. Setup FX Chain
+        if (typeof window.BassDistortion !== 'undefined') {
+            this.fxChain = new window.BassDistortion(this.ctx);
+            this.fxChain.setDistortion(this.params.distortion);
+            this.fxChain.connect(destinationNode);
+            this.output = this.fxChain.input; 
+        } else {
+            this.output = this.ctx.createGain();
+            this.output.connect(destinationNode);
         }
     }
 
-    // --- Parameter Setters ---
     setDistortion(val) {
         this.params.distortion = val;
         if (this.fxChain) this.fxChain.setDistortion(val);
@@ -57,41 +47,34 @@ class BassSynth {
     setDecay(val) { this.params.decay = val; }
     setWaveform(val) { this.params.waveform = val; }
 
-    // --- Voice Generation ---
     play(note, octave, time, duration = 0.25, slide = false, accent = false) {
         if (!this.ctx || !this.output) return;
 
-        // 1. Calculate Frequency
+        // Frecuencia
         const noteMap = {'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11};
         const noteIndex = noteMap[note];
         if (noteIndex === undefined) return;
-
         const midiNote = (octave + 1) * 12 + noteIndex;
         const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
 
-        // 2. Create Nodes
+        // Nodos
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain(); // VCA
         
-        // 3. Setup Oscillator (Pitch & Drift)
+        // Oscilador
         osc.type = this.params.waveform;
         
-        // Analog Drift: Slight detune per note for thickness
-        const drift = (Math.random() * 4) - 2; 
-        osc.detune.setValueAtTime(drift, time);
-
-        // Portamento / Slide Logic
+        // Portamento (Slide)
         if (!this.lastFreq) this.lastFreq = freq;
-
         if (slide) {
             osc.frequency.setValueAtTime(this.lastFreq, time);
-            osc.frequency.exponentialRampToValueAtTime(freq, time + 0.1); // Classic 303 glide time
+            osc.frequency.exponentialRampToValueAtTime(freq, time + 0.1); 
         } else {
             osc.frequency.setValueAtTime(freq, time);
         }
         this.lastFreq = freq;
 
-        // 4. Setup Filter (Delegate to FX Module)
+        // Filtro (FX Module)
         let filterNode = null;
         let filterDecay = 0.5;
 
@@ -100,47 +83,39 @@ class BassSynth {
             filterNode = fResult.node;
             filterDecay = fResult.decayTime;
         } else {
-            // Fallback
             filterNode = this.ctx.createBiquadFilter(); 
             filterNode.frequency.value = this.params.cutoff;
         }
 
-        // 5. Setup VCA (Volume Envelope) - EXTENDED TAILS
-        // We ensure the VCA stays open long enough for the distortion to "grab" the tail
-        const peakGain = accent ? 0.9 : 0.7; // Headroom for distortion
+        // VCA (Amplifier Envelope)
+        // La clave para una buena distorsión es cuánto nivel enviamos
+        // Enviamos un nivel un poco más bajo para tener "headroom" y que el circuito de distorsión trabaje dinámicamente
+        const peakVol = accent ? 0.8 : 0.6; 
         
         gain.gain.setValueAtTime(0, time);
         
         if (slide) {
-            // Legato: Smoother attack, full sustain until next note
-            gain.gain.linearRampToValueAtTime(peakGain, time + 0.02);
-            gain.gain.setValueAtTime(peakGain, time + duration - 0.05); 
-            // Quick fade out at the very end of the step to prevent click
-            gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
+            // Legato: Sostenido completo
+            gain.gain.linearRampToValueAtTime(peakVol, time + 0.02);
+            gain.gain.setValueAtTime(peakVol, time + duration); // Sustain
+            gain.gain.linearRampToValueAtTime(0, time + duration + 0.05); // Quick Release
         } else {
-            // Staccato/Normal: Punchy attack, but release depends on Filter Decay
-            // This couples the volume decay to the filter decay (classic subtractive synth behavior)
-            const releaseTime = Math.max(0.1, filterDecay * 0.8); 
+            // Staccato: La caída de volumen sigue al filtro para ese sonido "plucky"
+            // Importante: Dejamos un poco de cola para que la distorsión "respire"
+            const release = Math.max(0.15, filterDecay); 
             
-            gain.gain.linearRampToValueAtTime(peakGain, time + 0.005); // Snap attack
-            // Exponential decay to silence
-            gain.gain.exponentialRampToValueAtTime(0.001, time + releaseTime + 0.15); 
+            gain.gain.linearRampToValueAtTime(peakVol, time + 0.005); // Attack rápido
+            gain.gain.exponentialRampToValueAtTime(0.001, time + release); // Decay natural
         }
 
-        // 6. Connect Graph: OSC -> FILTER -> VCA -> [DISTORTION INPUT]
-        // Note: Connecting VCA to Distortion allows the distortion to react to the volume envelope (dynamic saturation)
+        // Routing: OSC -> FILTER -> VCA -> DISTORTION
         osc.connect(filterNode);
         filterNode.connect(gain);
         gain.connect(this.output);
 
-        // 7. Schedule Start/Stop
         osc.start(time);
-        
-        // Stop time must cover the full release tail to avoid clicking
-        // We add extra buffer time (0.5s) to let the filter/reverb tails die out naturally
-        osc.stop(time + duration + 0.5); 
+        osc.stop(time + duration + 1.0); // Margen de seguridad largo
 
-        // 8. Garbage Collection
         osc.onended = () => {
             try {
                 osc.disconnect();
