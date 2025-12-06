@@ -1,5 +1,5 @@
 /*
- * AUDIO ENGINE MODULE
+ * AUDIO ENGINE MODULE v37
  * Namespace: window.AudioEngine
  */
 
@@ -10,10 +10,20 @@ window.AudioEngine = {
     synths: [],
     drums: null,
     nextNoteTime: 0.0,
-    lookahead: 0.15, // Aumentado para evitar cortes
+    lookahead: 0.15, // Ventana más grande para estabilidad
     interval: 25,
     
-    init: function() {
+    // Paso 1: Crear datos (sin contexto de audio aún)
+    initData: function() {
+        if(this.synths.length === 0) {
+            this.addSynth('bass-1');
+            // Registrar track en matriz
+            if(window.timeMatrix) window.timeMatrix.registerTrack('bass-1');
+        }
+    },
+
+    // Paso 2: Arrancar Audio (User Gesture)
+    startContext: function() {
         if (this.ctx && this.ctx.state === 'running') return;
 
         try {
@@ -24,7 +34,7 @@ window.AudioEngine = {
                 // Master Bus
                 const comp = this.ctx.createDynamicsCompressor();
                 comp.threshold.value = -2;
-                comp.ratio.value = 12;
+                comp.ratio.value = 8;
                 
                 this.master = this.ctx.createGain();
                 this.master.gain.value = 0.7;
@@ -38,19 +48,15 @@ window.AudioEngine = {
                     this.drums.init(this.ctx, this.master);
                 }
 
-                // Bass Synths
-                if(this.synths.length === 0) {
-                    this.addSynth('bass-1');
-                } else {
-                    this.synths.forEach(s => s.init(this.ctx, this.master));
-                }
+                // Bass Synths exist, just connect them
+                this.synths.forEach(s => s.init(this.ctx, this.master));
 
                 this.initWorker();
-                console.log("[Audio] Engine Started");
+                console.log("[Audio] Context Started");
             }
             if (this.ctx.state === 'suspended') this.ctx.resume();
         } catch (e) {
-            console.error("[Audio] Init Error:", e);
+            console.error("[Audio] Context Error:", e);
         }
     },
 
@@ -90,6 +96,9 @@ window.AudioEngine = {
     },
 
     scheduler: function() {
+        // Solo planificar si hay contexto
+        if(!this.ctx) return;
+
         while (this.nextNoteTime < this.ctx.currentTime + this.lookahead) {
             this.scheduleNote(window.AppState.currentPlayStep, window.AppState.currentPlayBlock, this.nextNoteTime);
             this.advanceNote();
@@ -112,9 +121,8 @@ window.AudioEngine = {
     },
 
     scheduleNote: function(step, block, time) {
-        if(window.UI && window.UI.visualQueue) {
-            window.UI.visualQueue.push({ step, block, time });
-        }
+        // Enviar a UI para dibujado
+        if(window.UI) window.UI.pushVisualEvent(step, block, time);
 
         const data = window.timeMatrix.getStepData(step, block);
         if(!data) return;
@@ -134,19 +142,21 @@ window.AudioEngine = {
         }
     },
 
-    start: function() {
-        this.init();
+    startPlayback: function() {
+        this.startContext();
+        // Reset tiempos
         this.nextNoteTime = this.ctx.currentTime + 0.05;
         if(this.worker) this.worker.postMessage("start");
     },
 
-    stop: function() {
+    stopPlayback: function() {
         if(this.worker) this.worker.postMessage("stop");
     },
 
-    // --- EXPORT FUNCTION ---
+    // --- EXPORTAR A WAV ---
     renderWav: async function() {
-        if(window.AppState.isPlaying) window.Main.togglePlay();
+        // Pausar si está sonando
+        if(window.AppState.isPlaying) window.UI.toggleTransport();
         
         const btn = document.getElementById('btn-start-render');
         if(btn) { btn.innerText = "RENDERING..."; btn.disabled = true; }
@@ -170,8 +180,10 @@ window.AudioEngine = {
             this.synths.forEach(src => {
                 const s = new window.BassSynth(src.id);
                 s.init(oCtx, oMaster);
-                s.params = JSON.parse(JSON.stringify(src.params)); // Deep copy params
-                if(s.fxChain) s.setDistortion(src.params.distortion); // Update internal FX
+                // Clonar params manualmente
+                s.params = JSON.parse(JSON.stringify(src.params)); 
+                // Actualizar FX interno del clon
+                if(s.fxChain) s.setDistortion(src.params.distortion); 
                 oSynths.push(s);
             });
 
@@ -205,14 +217,14 @@ window.AudioEngine = {
             const url = URL.createObjectURL(wav);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `ND23_Render_${Date.now()}.wav`;
+            a.download = `NeuroDark_Render_${Date.now()}.wav`;
             a.click();
             
             if(window.UI) window.UI.toggleExportModal();
 
         } catch(e) {
             console.error("Render Error", e);
-            alert("Render Failed");
+            alert("Render Failed: " + e);
         } finally {
             if(btn) { btn.innerText = "RENDER"; btn.disabled = false; }
         }
