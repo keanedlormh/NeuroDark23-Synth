@@ -85,7 +85,6 @@ body {
     border: 1px solid #999;
     border-top: none;
     border-bottom: 4px solid #888; 
-    /* Height is controlled by flex parent in HTML */
 }
 .white-key:active {
     background: var(--neon-green);
@@ -98,22 +97,20 @@ body {
     color: #666; 
     border: 1px solid #333; 
     border-bottom: 3px solid #000; 
-    height: 65%; /* Adjusted for relative container */
-    /* Positioning is handled by utility classes in HTML */
+    height: 65%; 
 }
 .black-key:active {
     background: var(--neon-green) !important; 
     color: #000 !important; 
     border-bottom-color: #004400; 
-    transform: translateY(2px); /* Maintain translation with absolute pos */
+    transform: translateY(2px); 
 }
 
-/* PANEL ESTADOS (UPDATED HEIGHT) */
+/* PANEL ESTADOS (COMPACT AUTO-HEIGHT) */
 .panel-expanded { 
-    height: 45vh;
-    min-height: 400px; /* Seguridad para pantallas muy pequeñas */
-    max-height: 80vh;
-    overflow: hidden !important; 
+    height: auto;           /* Se adapta al contenido */
+    max-height: 85vh;       /* Límite para no tapar todo en pantallas muy pequeñas */
+    overflow-y: auto !important; /* Scroll solo si excede el 85vh */
 } 
 .panel-collapsed { 
     height: 32px; 
@@ -157,7 +154,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px
     border-radius: 2px;
 }
 
-/* INPUT NUMBER STYLING (Hide Spinners) */
+/* INPUT NUMBER STYLING */
 .dfx-value {
     width: 100%;
     background: transparent;
@@ -167,9 +164,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px
     font-weight: bold;
     text-align: center;
     outline: none;
-    -moz-appearance: textfield; /* Firefox */
+    -moz-appearance: textfield;
 }
-/* Webkit (Chrome/Safari/Edge) spinner hiding */
 .dfx-value::-webkit-outer-spin-button,
 .dfx-value::-webkit-inner-spin-button {
     -webkit-appearance: none;
