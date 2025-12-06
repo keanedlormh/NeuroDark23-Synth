@@ -1,9 +1,9 @@
 /*
- * NEURODARK 23 - MAIN CONTROLLER v33
+ * NEURODARK 23 - MAIN CONTROLLER v34
  * Central Hub: Bootstraps Engine & UI
  */
 
-// --- GLOBAL STATE ---
+// --- GLOBAL APP STATE ---
 window.AppState = {
     isPlaying: false,
     bpm: 174,
@@ -28,22 +28,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 2. Inicializar Estado de Datos
+    // Crear el primer sintetizador si no existe
     if (window.bassSynths.length === 0) {
         const def = new window.BassSynth('bass-1');
         window.bassSynths.push(def);
-        // Registrar en matriz
-        if(window.timeMatrix.registerTrack) window.timeMatrix.registerTrack('bass-1');
+        
+        // Registrar en matriz de tiempo
+        if(window.timeMatrix.registerTrack) {
+            window.timeMatrix.registerTrack('bass-1');
+        }
     }
 
-    // 3. Inicializar UI
+    // 3. Inicializar Interfaz de Usuario
     window.renderInstrumentTabs();
     window.renderTrackBar();
     window.updateEditors();
     window.initPlayClockUI();
-    window.setupControlListeners(); // Vincula teclas, sliders, etc.
+    window.setupControlListeners(); 
     
-    // Sincronizar estado inicial
+    // 4. Sincronizar estado inicial
     window.syncControlsFromSynth('bass-1');
+
+    // 5. Global Unlocks (Audio Policy)
+    document.addEventListener('click', window.globalUnlock);
+    document.addEventListener('touchstart', window.globalUnlock);
 
     console.log("[Main] System Boot Complete");
 });
@@ -61,7 +69,7 @@ window.setTab = function(viewId) {
     }
 };
 
-// Toggle UI Mode (Analog/Digital)
+// Toggle UI Mode
 window.toggleUIMode = function() {
     window.AppState.uiMode = window.AppState.uiMode === 'analog' ? 'digital' : 'analog';
     const btn = document.getElementById('btn-toggle-ui-mode');
@@ -112,7 +120,8 @@ window.togglePanelState = function() {
 window.addBassSynth = function() {
     const id = `bass-${window.bassSynths.length + 1}`;
     const s = new window.BassSynth(id);
-    // Si el motor de audio ya corre, inicializarlo
+    
+    // Inicializar si el motor ya corre
     if(window.audioCtx) s.init(window.audioCtx, window.masterGain);
     
     window.bassSynths.push(s);
