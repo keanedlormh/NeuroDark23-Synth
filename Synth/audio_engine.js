@@ -1,7 +1,7 @@
 /*
- * AUDIO ENGINE MODULE (v30)
+ * AUDIO ENGINE MODULE (v31 - Matrix Sync Update)
  * Handles AudioContext, Scheduling, Synthesis, and Rendering.
- * Decoupled from UI logic.
+ * Includes sync logic for CSV imports.
  */
 
 class AudioEngine {
@@ -110,14 +110,17 @@ class AudioEngine {
 
     removeSynth(id) {
         if (this.bassSynths.length <= 1) {
-            window.logToScreen("Cannot remove last synth", 'warn');
-            return false;
+            // window.logToScreen("Cannot remove last synth", 'warn'); 
+            // Allow removing last synth IF we are doing a full sync/reset
+            // But usually UI prevents this. For safety, let's keep logic simple.
         }
         const idx = this.bassSynths.findIndex(s => s.id === id);
         if (idx > -1) {
+            // Disconnect audio nodes if possible (optional cleanup)
+            // this.bassSynths[idx].disconnect(); 
             this.bassSynths.splice(idx, 1);
             if (window.timeMatrix) window.timeMatrix.removeTrack(id);
-            window.logToScreen(`Removed Synth: ${id}`);
+            // window.logToScreen(`Removed Synth: ${id}`);
             return true;
         }
         return false;
@@ -125,6 +128,38 @@ class AudioEngine {
 
     getSynth(id) {
         return this.bassSynths.find(s => s.id === id);
+    }
+
+    /**
+     * Sincroniza los sintetizadores activos con los datos cargados en la matriz.
+     * Útil al importar CSV para eliminar sintes viejos o crear nuevos.
+     */
+    syncWithMatrix(matrix) {
+        if (!matrix) return;
+
+        // 1. Identificar qué tracks existen en la matriz cargada
+        const activeIds = new Set();
+        matrix.blocks.forEach(b => {
+            if(b.tracks) {
+                Object.keys(b.tracks).forEach(id => activeIds.add(id));
+            }
+        });
+
+        // 2. Eliminar sintes del motor que NO están en la matriz (Limpieza)
+        for (let i = this.bassSynths.length - 1; i >= 0; i--) {
+            const synth = this.bassSynths[i];
+            if (!activeIds.has(synth.id)) {
+                this.bassSynths.splice(i, 1);
+                // Opcional: Log de limpieza
+            }
+        }
+
+        // 3. Añadir sintes que están en la matriz pero NO en el motor
+        activeIds.forEach(id => {
+            if (!this.getSynth(id)) {
+                this.addBassSynth(id);
+            }
+        });
     }
 
     // --- TRANSPORT CONTROLS ---
@@ -150,10 +185,6 @@ class AudioEngine {
     stopPlayback() {
         window.AppState.isPlaying = false;
         if (this.clockWorker) this.clockWorker.postMessage("stop");
-        
-        // Reset Visuals immediately via UI Controller (handled in UI loop)
-        // But we can push a "stop" event or handle it in UIController directly.
-        
         window.logToScreen("STOP");
     }
 
