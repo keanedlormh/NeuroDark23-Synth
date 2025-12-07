@@ -1,7 +1,7 @@
 /*
- * UI CONTROLLER MODULE (v30.3 - Digital Cutoff Fix)
+ * UI CONTROLLER MODULE (v31.1 - CSV & Memory Patch)
  * Handles DOM manipulation, Event Listeners, and Visual Feedback.
- * Decoupled from Audio logic.
+ * Includes Virtual Memory (CSV) logic and Audio Engine Sync.
  */
 
 class UIController {
@@ -24,7 +24,7 @@ class UIController {
         // Start Visual Loop
         this.renderLoop();
         
-        window.logToScreen("UI Controller Initialized");
+        if(window.logToScreen) window.logToScreen("UI Controller Initialized");
     }
 
     // --- 1. EVENT BINDING ---
@@ -54,34 +54,127 @@ class UIController {
         this.safeClick('btn-toggle-ui-mode', () => this.toggleUIMode());
         this.safeClick('btn-toggle-visualizer', () => this.toggleVisualizerMode());
         
-        // EXPORT TRIGGERS
+        // EXPORT TRIGGERS (AUDIO)
         this.safeClick('btn-open-export', () => { 
-            this.toggleMenu(); // Close main menu
-            this.toggleExportModal(); // Open export modal
+            this.toggleMenu(); 
+            this.toggleExportModal(); 
         });
         this.safeClick('btn-close-export', () => this.toggleExportModal());
+
+        // --- NEW: MEMORY TRIGGERS (CSV) ---
+        this.safeClick('btn-open-memory', () => {
+            this.toggleMenu();
+            this.toggleMemoryModal();
+        });
+        this.safeClick('btn-close-memory', () => this.toggleMemoryModal());
+
+        // --- NEW: CSV ACTIONS ---
         
-        // RENDER BUTTON WITH VISUAL FEEDBACK
+        // 1. GENERATE CSV (Export to Text Area)
+        this.safeClick('btn-gen-csv', () => {
+            if(window.timeMatrix) {
+                const csvData = window.timeMatrix.exportToCSV();
+                const area = document.getElementById('csv-io-area');
+                if(area) area.value = csvData;
+                if(window.logToScreen) window.logToScreen("CSV Generated in Buffer");
+            }
+        });
+
+        // 2. LOAD FROM TEXT (Import from Text Area)
+        this.safeClick('btn-load-csv', () => {
+            const area = document.getElementById('csv-io-area');
+            if(area && window.timeMatrix) {
+                // A. Import Data to Matrix
+                const success = window.timeMatrix.importFromCSV(area.value);
+                
+                if(success) {
+                    // B. Sync Audio Engine (CRITICAL STEP)
+                    if(window.audioEngine && typeof window.audioEngine.syncWithMatrix === 'function') {
+                        window.audioEngine.syncWithMatrix(window.timeMatrix);
+                    } else {
+                        console.warn("AudioEngine.syncWithMatrix not found. Please update audio_engine.js");
+                    }
+
+                    // C. Reset UI State
+                    window.AppState.editingBlock = 0;
+                    window.AppState.selectedStep = 0;
+                    
+                    // D. Render Everything
+                    this.renderInstrumentTabs();
+                    this.renderTrackBar();
+                    this.updateEditors();
+                    this.renderSynthMenu();
+                    
+                    // E. Set active view
+                    if(window.audioEngine && window.audioEngine.bassSynths.length > 0) {
+                        this.setTab(window.audioEngine.bassSynths[0].id);
+                    } else {
+                        this.setTab('drum');
+                    }
+
+                    if(window.logToScreen) window.logToScreen("CSV Loaded Successfully");
+                    // Auto close modal on success
+                    this.toggleMemoryModal(); 
+                } else {
+                    if(window.logToScreen) window.logToScreen("CSV Import Failed: Invalid Format", 'error');
+                }
+            }
+        });
+
+        // 3. DOWNLOAD CSV FILE
+        this.safeClick('btn-download-csv', () => {
+            const content = document.getElementById('csv-io-area').value;
+            if(!content) { 
+                if(window.logToScreen) window.logToScreen("Buffer Empty", 'warn'); 
+                return; 
+            }
+            
+            const blob = new Blob([content], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ND23_Patch_${Date.now()}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // 4. UPLOAD CSV FILE
+        const fileInput = document.getElementById('file-upload-csv');
+        if(fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const contents = e.target.result;
+                    const area = document.getElementById('csv-io-area');
+                    if(area) area.value = contents;
+                    
+                    // Auto trigger load logic
+                    document.getElementById('btn-load-csv').click();
+                };
+                reader.readAsText(file);
+                // Reset input
+                fileInput.value = '';
+            });
+        }
+        
+        // RENDER BUTTON (AUDIO)
         this.safeClick('btn-start-render', async () => { 
             if(window.audioEngine) {
                 const btn = document.getElementById('btn-start-render');
-                
-                // Visual feedback start
                 if(btn) {
                     btn.innerText = "WAIT...";
                     btn.classList.add('opacity-50', 'cursor-not-allowed');
                     btn.disabled = true;
                 }
-
-                // Force a small UI tick before blocking
                 await new Promise(r => setTimeout(r, 50));
-
                 try {
                     await window.audioEngine.renderAudio();
                 } catch (e) {
                     console.error("Render failed", e);
                 } finally {
-                    // Visual feedback end
                     if(btn) {
                         btn.innerText = "RENDER";
                         btn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -117,14 +210,16 @@ class UIController {
             }
         });
         this.safeClick('btn-mem-copy', () => { 
-            if(window.timeMatrix.copyToClipboard(window.AppState.editingBlock)) window.logToScreen("PATTERN COPIED"); 
+            if(window.timeMatrix.copyToClipboard(window.AppState.editingBlock)) {
+                if(window.logToScreen) window.logToScreen("PATTERN COPIED"); 
+            }
         });
         this.safeClick('btn-mem-paste', () => { 
             if(window.timeMatrix.pasteFromClipboard(window.AppState.editingBlock)) { 
                 window.AppState.editingBlock++; 
                 this.updateEditors(); 
                 this.renderTrackBar(); 
-                window.logToScreen("PATTERN PASTED"); 
+                if(window.logToScreen) window.logToScreen("PATTERN PASTED"); 
             }
         });
         this.safeClick('btn-move-left', () => { 
@@ -178,7 +273,7 @@ class UIController {
                     this.renderSynthMenu();
                     this.renderInstrumentTabs();
                     this.setTab(s.id);
-                    window.logToScreen(`Added ${s.id}`);
+                    if(window.logToScreen) window.logToScreen(`Added ${s.id}`);
                 }
             }
         });
@@ -293,7 +388,7 @@ class UIController {
 
         let finalValue = value;
 
-        // Cutoff mapping normalization (Expects value in Hz for slider)
+        // Cutoff mapping normalization
         if (param === 'cutoff') {
             const minHz = 100, maxHz = 5000;
             const clamped = Math.max(minHz, Math.min(maxHz, value));
@@ -316,13 +411,10 @@ class UIController {
     }
 
     handleDigitalChange(param, value) {
-        // Digital inputs for Resonance/Cutoff need special handling for visual scaling
         if (param === 'resonance') {
-            this.handleParamChange('resonance', value / 5); // 0-100 -> 0-20
+            this.handleParamChange('resonance', value / 5); 
         } 
         else if (param === 'cutoff') {
-            // FIX: Convert 0-100 range back to Hz (100-5000) 
-            // so handleParamChange processes it correctly without resetting to 0.
             const hz = ((value / 100) * 4900) + 100;
             this.handleParamChange('cutoff', hz);
         }
@@ -342,7 +434,6 @@ class UIController {
         const block = window.timeMatrix.blocks[window.AppState.editingBlock];
         if(!block.tracks[sId]) window.timeMatrix.registerTrack(sId);
         
-        // Preserve existing flags if overwriting
         const prev = block.tracks[sId][window.AppState.selectedStep];
         
         block.tracks[sId][window.AppState.selectedStep] = { 
@@ -413,6 +504,14 @@ class UIController {
         }
     }
 
+    toggleMemoryModal() {
+        const m = document.getElementById('memory-modal');
+        if(m) {
+            m.classList.toggle('hidden');
+            m.classList.toggle('flex');
+        }
+    }
+
     // --- 4. VISUAL RENDER LOOP ---
 
     renderLoop() {
@@ -431,20 +530,17 @@ class UIController {
     }
 
     processVisualEvent(ev) {
-        // Redraw TrackBar on Step 0 (sync visual)
         if(ev.step === 0) this.renderTrackBar();
 
         if(this.lastDrawnStep !== ev.step) {
             this.updatePlayClock(ev.step);
             
-            // Follow Playback logic
             if(window.AppState.followPlayback && ev.block !== window.AppState.editingBlock) {
                 window.AppState.editingBlock = ev.block;
                 this.updateEditors();
                 this.renderTrackBar();
             }
 
-            // Highlight Matrix
             if(ev.block === window.AppState.editingBlock) {
                 window.timeMatrix.highlightPlayingStep(ev.step);
                 if(ev.step % 4 === 0) this.blinkLed();
@@ -459,7 +555,7 @@ class UIController {
     // --- 5. UI UPDATES & SYNC ---
 
     syncControls(viewId) {
-        if(viewId === 'drum') return; // No params for drums in this UI
+        if(viewId === 'drum') return; 
         
         const synth = window.audioEngine.getSynth(viewId);
         if(!synth) return;
@@ -524,7 +620,6 @@ class UIController {
             if(fxBtn) fxBtn.style.display = 'block';
         }
 
-        // Update Modifiers Buttons State
         const slideBtn = document.getElementById('btn-toggle-slide');
         const accBtn = document.getElementById('btn-toggle-accent');
         if(slideBtn) slideBtn.classList.remove('text-green-400', 'border-green-600');
@@ -576,7 +671,6 @@ class UIController {
         if(!c || !window.audioEngine) return;
         c.innerHTML = '';
         
-        // Bass Tabs
         window.audioEngine.bassSynths.forEach(s => {
             const b = document.createElement('button');
             const active = window.AppState.activeView === s.id;
@@ -586,7 +680,6 @@ class UIController {
             c.appendChild(b);
         });
 
-        // Drum Tab
         const d = document.createElement('button');
         const dActive = window.AppState.activeView === 'drum';
         d.className = `px-3 py-1 text-[10px] font-bold border uppercase transition-all ${dActive ? 'text-green-400 bg-gray-900 border-green-500 shadow-md' : 'text-gray-500 border-transparent hover:text-gray-300'}`;
@@ -748,7 +841,6 @@ class UIController {
                 if(!s) return;
                 
                 let current = 0;
-                // Get current value
                 if(target === 'volume') current = s.params.volume;
                 else if(target === 'distortion') current = s.params.distortion;
                 else if(target === 'envMod') current = s.params.envMod;
@@ -761,9 +853,8 @@ class UIController {
 
                 let next = Math.max(0, Math.min(100, current + dir));
                 
-                // Call handler to update Audio and UI
                 if(target === 'resonance') this.handleDigitalChange('resonance', next);
-                else if (target === 'cutoff') this.handleDigitalChange('cutoff', next); // Also use special handling for repeaters
+                else if (target === 'cutoff') this.handleDigitalChange('cutoff', next); 
                 else this.handleParamChange(target, next);
             };
 
