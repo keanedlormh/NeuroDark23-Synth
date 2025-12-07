@@ -1,5 +1,5 @@
 /*
- * AUDIO ENGINE MODULE (v31 - Matrix Sync Update)
+ * AUDIO ENGINE MODULE (v31.1 - Matrix Sync Fix)
  * Handles AudioContext, Scheduling, Synthesis, and Rendering.
  * Includes sync logic for CSV imports.
  */
@@ -47,10 +47,10 @@ class AudioEngine {
             // Initialize Clock Worker
             this.initWorker();
             
-            window.logToScreen("Audio Engine Initialized");
+            if(window.logToScreen) window.logToScreen("Audio Engine Initialized");
         } catch (e) {
             console.error("Audio Init Failed:", e);
-            window.logToScreen("Audio Init Failed: " + e, 'error');
+            if(window.logToScreen) window.logToScreen("Audio Init Failed: " + e, 'error');
         }
     }
 
@@ -127,10 +127,11 @@ class AudioEngine {
 
     /**
      * Sincroniza los sintetizadores activos con los datos cargados en la matriz.
-     * Útil al importar CSV para eliminar sintes viejos o crear nuevos.
+     * ESTA ES LA FUNCIÓN QUE FALTABA O NO SE LEÍA CORRECTAMENTE
      */
     syncWithMatrix(matrix) {
         if (!matrix) return;
+        console.log("AudioEngine: Syncing with Matrix...");
 
         // 1. Identificar qué tracks existen en la matriz cargada
         const activeIds = new Set();
@@ -140,7 +141,8 @@ class AudioEngine {
             }
         });
 
-        // 2. Eliminar sintes del motor que NO están en la matriz (Limpieza)
+        // 2. Eliminar sintes del motor que NO están en la matriz
+        // Iteramos hacia atrás para borrar sin romper índices
         for (let i = this.bassSynths.length - 1; i >= 0; i--) {
             const synth = this.bassSynths[i];
             if (!activeIds.has(synth.id)) {
@@ -171,13 +173,13 @@ class AudioEngine {
         window.visualQueue = []; // Clear queue
 
         if (this.clockWorker) this.clockWorker.postMessage("start");
-        window.logToScreen("PLAY");
+        if(window.logToScreen) window.logToScreen("PLAY");
     }
 
     stopPlayback() {
         window.AppState.isPlaying = false;
         if (this.clockWorker) this.clockWorker.postMessage("stop");
-        window.logToScreen("STOP");
+        if(window.logToScreen) window.logToScreen("STOP");
     }
 
     toggleTransport() {
@@ -277,7 +279,7 @@ class AudioEngine {
     async renderAudio() {
         if (window.AppState.isPlaying) this.stopPlayback();
         
-        window.logToScreen("Starting Offline Render...");
+        if(window.logToScreen) window.logToScreen("Starting Offline Render...");
         
         try {
             const stepsPerBlock = window.timeMatrix.totalSteps;
@@ -354,11 +356,11 @@ class AudioEngine {
             a.download = `ND23_Render_${Date.now()}.wav`;
             a.click();
             
-            window.logToScreen("Render Complete. Downloading...");
+            if(window.logToScreen) window.logToScreen("Render Complete. Downloading...");
             return true;
 
         } catch (e) {
-            window.logToScreen("Render Failed: " + e, 'error');
+            if(window.logToScreen) window.logToScreen("Render Failed: " + e, 'error');
             console.error(e);
             return false;
         }
