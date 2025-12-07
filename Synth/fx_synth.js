@@ -1,135 +1,108 @@
 /*
- * FX SYNTH MODULE (Integrated Channel Strip)
- * Architecture: Cascaded Filters + Dynamic Saturation
- * Designed for: "Liquid" Acid Bass without digital artifacts
+ * FX SYNTH MODULE (ACID CORE v4)
+ * Focus: Warm harmonics, tight low-end, and screaming resonance.
  */
 
-class NeuroFX {
-    constructor(ctx) {
-        this.ctx = ctx;
-        
-        // --- 1. FILTER SECTION (12dB + 6dB Cascade = 18dBish feel) ---
-        // Usamos dos filtros en serie para lograr una pendiente más pronunciada
-        // típica de sintes acid (estilo TB-303 que es 18dB/24dB)
-        this.filter1 = this.ctx.createBiquadFilter();
-        this.filter1.type = 'lowpass';
-        
-        this.filter2 = this.ctx.createBiquadFilter();
-        this.filter2.type = 'lowpass'; // Suaviza la resonancia del primero
+// --- 1. FILTER ENGINE (Liquid 303 Style) ---
+// (Mantenemos este módulo ya que define el carácter del filtro Acid)
+class BassFilter {
+    static create(ctx, time, params, duration, slide, accent) {
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
 
-        // --- 2. SATURATION STAGE (Warmth) ---
+        // --- FRECUENCIA BASE (Logarítmica Musical) ---
+        // Convertimos 0-100 a un rango de Hz útil (60Hz - 10000Hz)
+        const t = params.cutoff / 100; 
+        const baseFreq = 60 + (t * t * 9000); 
+
+        // --- RESONANCIA (Q Adaptativa) ---
+        let qVal = params.resonance; // 0-20 raw
+        
+        if (accent) {
+            // Boost masivo de resonancia en acento
+            qVal = Math.min(28, qVal * 1.5 + 5); 
+        }
+        
+        // Compensación de agudos
+        if (baseFreq > 5000) qVal *= 0.6;
+        
+        filter.Q.value = Math.min(30, qVal);
+
+        // --- ENVOLVENTE (Modulation) ---
+        const envStrength = params.envMod / 100;
+        const peakFreq = Math.min(22050, baseFreq + (envStrength * 8000));
+        
+        // --- TIEMPOS ---
+        const attackTime = slide ? 0.12 : 0.005;
+        
+        let decayTime = 0.1 + (params.decay / 100) * 0.8; 
+        if (accent) decayTime = 0.18; 
+        if (slide) decayTime = duration * 1.2;
+
+        // --- AUTOMATIZACIÓN ---
+        filter.frequency.setValueAtTime(baseFreq, time);
+        filter.frequency.linearRampToValueAtTime(peakFreq, time + attackTime);
+        filter.frequency.setTargetAtTime(baseFreq, time + attackTime, decayTime / 3.5);
+
+        return { node: filter, decayTime: decayTime };
+    }
+}
+
+// --- 2. DISTORTION ENGINE (Updated to Classic Soft-Clip) ---
+// Reemplazado con la lógica de BassFXChain proporcionada por el usuario
+class BassDistortion {
+    constructor(audioContext) {
+        this.ctx = audioContext;
+        this.input = this.ctx.createGain();
+        this.output = this.ctx.createGain();
+
+        // 1. Distortion Node
         this.shaper = this.ctx.createWaveShaper();
-        this.shaper.oversample = '4x'; // Alta calidad
-        
-        // --- 3. EQ CORRECTION ---
-        // Elimina el "barro" subgrave y el "fizz" agudo post-distorsión
-        this.eqLowCut = this.ctx.createBiquadFilter();
-        this.eqLowCut.type = 'highpass';
-        this.eqLowCut.frequency.value = 120; // Limpia graves para la distorsión
-        
-        this.eqHiCut = this.ctx.createBiquadFilter();
-        this.eqHiCut.type = 'lowpass';
-        this.eqHiCut.frequency.value = 6000; // Simula gabinete/altavoz
+        this.shaper.oversample = '4x'; // Mantenemos 4x para calidad extra, aunque el ejemplo usaba 2x
 
-        // --- 4. GAIN STAGING ---
-        this.input = this.filter1; // Entrada al primer filtro
-        this.driveGain = this.ctx.createGain(); // Empuje hacia el saturador
-        this.makeUpGain = this.ctx.createGain(); // Volumen final
+        // Routing: Input -> Shaper -> Output
+        // Eliminada la complejidad anterior (Pre/Post filtros) que ensuciaba el sonido
+        this.input.connect(this.shaper);
+        this.shaper.connect(this.output);
 
-        // ROUTING
-        // Osc -> Filter1 -> Filter2 -> LowCut -> Drive -> Shaper -> HiCut -> Output
-        this.filter1.connect(this.filter2);
-        this.filter2.connect(this.eqLowCut);
-        this.eqLowCut.connect(this.driveGain);
-        this.driveGain.connect(this.shaper);
-        this.shaper.connect(this.eqHiCut);
-        this.eqHiCut.connect(this.makeUpGain);
-        
-        this.output = this.makeUpGain;
-
-        // Cache de curvas
-        this.curveCache = new Map();
-        
-        // Init Defaults
-        this.setDistortion(0);
+        // Init Cache
+        this.amount = 0;
+        this.cachedCurve = null;
     }
 
-    // --- CONTROL METHODS ---
-
-    /**
-     * Aplica la envolvente de filtro (El efecto "Wow")
-     */
-    applyFilterEnv(time, params, duration, isSlide, isAccent) {
-        // Mapeo de Frecuencia (Logarítmico)
-        // 0-100 -> 100Hz - 8000Hz
-        const cutoffNorm = params.cutoff / 100;
-        const baseFreq = 100 + (cutoffNorm * cutoffNorm) * 8000;
-
-        // Resonancia
-        // La resonancia es peligrosa digitalmente. La limitamos.
-        let q = params.resonance * 0.2; // 0-100 -> 0-20
-        if (isAccent) q += 5; // Extra "chirrido" en acento
-        
-        // Aplicamos Q al primer filtro (el que da el carácter)
-        this.filter1.Q.value = Math.min(25, q);
-        this.filter2.Q.value = 0.5; // El segundo filtro solo suaviza (Butterworth)
-
-        // Intensidad de Envolvente
-        const envAmount = params.envMod / 100;
-        const peakFreq = Math.min(22000, baseFreq + (envAmount * 10000));
-
-        // Tiempos
-        const attack = isSlide ? 0.1 : 0.005;
-        let decay = 0.1 + (params.decay / 100) * 0.5; // 0.1s - 0.6s
-        if (isAccent) decay = 0.15; // Acentos rápidos
-        if (isSlide) decay = duration; // Slide sostenido
-
-        // Automatización de ambos filtros
-        [this.filter1.frequency, this.filter2.frequency].forEach(param => {
-            param.cancelScheduledValues(time);
-            param.setValueAtTime(baseFreq, time);
-            param.linearRampToValueAtTime(peakFreq, time + attack);
-            param.setTargetAtTime(baseFreq, time + attack, decay / 3);
-        });
-        
-        return decay; // Devolvemos el tiempo de decay para sincronizar el VCA
+    connect(destination) {
+        this.output.connect(destination);
     }
 
     setDistortion(amount) {
-        // Generar curva si no existe
-        if (!this.curveCache.has(amount)) {
-            this.curveCache.set(amount, this._makeSaturationCurve(amount));
+        // Evitar regenerar la curva si no ha cambiado
+        if (amount === this.amount && this.cachedCurve) return;
+        this.amount = amount;
+
+        if (amount <= 0) {
+            this.shaper.curve = null;
+        } else {
+            // Lazy generate curve
+            this.shaper.curve = this._makeDistortionCurve(amount);
         }
-        this.shaper.curve = this.curveCache.get(amount);
-
-        // Drive Logic (Compensación automática de ganancia)
-        // A más distorsión, más entrada pero menos salida
-        const drive = 1 + (amount / 5); // 1x a 21x
-        
-        this.driveGain.gain.value = drive;
-        this.makeUpGain.gain.value = 1 / Math.sqrt(drive); // Mantiene volumen estable
-
-        // Ajuste de tono dinámico: A más distorsión, cerramos un poco el HiCut
-        // para evitar que suene a "arena"
-        const toneFreq = 8000 - (amount * 40); 
-        this.eqHiCut.frequency.value = Math.max(2000, toneFreq);
     }
 
-    // Curva "Soft Clipper" (Musical)
-    _makeSaturationCurve(amount) {
+    // Algoritmo clásico de distorsión sigmoide
+    _makeDistortionCurve(amount) {
+        const k = amount; // Usamos el valor directo (0-100 funciona bien con esta fórmula)
         const n_samples = 44100;
         const curve = new Float32Array(n_samples);
-        const k = amount * 0.1; // Dureza suave
-        
-        for (let i = 0; i < n_samples; i++) {
-            const x = (i * 2) / n_samples - 1;
-            // Algoritmo: x / (1 + k*|x|) -> Curva asintótica suave
-            // Evita el corte duro (hard clipping)
-            if (amount === 0) curve[i] = x;
-            else curve[i] = (1 + k) * x / (1 + k * Math.abs(x));
+        const deg = Math.PI / 180;
+
+        for (let i = 0; i < n_samples; ++i) {
+            let x = i * 2 / n_samples - 1;
+            // Fórmula clásica: (3 + k) * x * 20 * deg / (PI + k * abs(x))
+            curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
         }
         return curve;
     }
 }
 
-window.NeuroFX = NeuroFX;
+// Export global para compatibilidad
+window.BassFilter = BassFilter;
+window.BassDistortion = BassDistortion;
