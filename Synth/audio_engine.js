@@ -111,16 +111,11 @@ class AudioEngine {
     removeSynth(id) {
         if (this.bassSynths.length <= 1) {
             // window.logToScreen("Cannot remove last synth", 'warn'); 
-            // Allow removing last synth IF we are doing a full sync/reset
-            // But usually UI prevents this. For safety, let's keep logic simple.
         }
         const idx = this.bassSynths.findIndex(s => s.id === id);
         if (idx > -1) {
-            // Disconnect audio nodes if possible (optional cleanup)
-            // this.bassSynths[idx].disconnect(); 
             this.bassSynths.splice(idx, 1);
             if (window.timeMatrix) window.timeMatrix.removeTrack(id);
-            // window.logToScreen(`Removed Synth: ${id}`);
             return true;
         }
         return false;
@@ -150,7 +145,6 @@ class AudioEngine {
             const synth = this.bassSynths[i];
             if (!activeIds.has(synth.id)) {
                 this.bassSynths.splice(i, 1);
-                // Opcional: Log de limpieza
             }
         }
 
@@ -170,9 +164,7 @@ class AudioEngine {
         window.AppState.isPlaying = true;
         window.AppState.currentPlayStep = 0;
         
-        // Start from the currently edited block? Or always 0? 
-        // Logic: Start from edited block to loop it, or sequence blocks logic.
-        // For now, let's start at the beginning of the current block for immediacy.
+        // Start from the currently edited block
         window.AppState.currentPlayBlock = window.AppState.editingBlock;
 
         this.nextNoteTime = this.ctx.currentTime + 0.1;
