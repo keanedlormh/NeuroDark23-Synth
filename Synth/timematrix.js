@@ -1,6 +1,7 @@
 /**
- * TIME MATRIX MODULE (v31 - CSV Memory Edition)
- * Handles Grid Data, Block Management, and CSV I/O.
+ * TIME MATRIX MODULE (v37 - Deep Drum Integration)
+ * Handles Grid Data, Block Management, and Complex CSV I/O.
+ * Supports Dynamic Drum Channels and Configuration Persistence.
  */
 
 class TimeMatrix {
@@ -12,7 +13,7 @@ class TimeMatrix {
         this.selectedStep = 0;
         this.clipboard = null;
         
-        // Note Mapping for CSV (1-based index)
+        // Note Mapping for CSV
         this.noteMapRev = ['-', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
         this.noteMap = {
             'C':1, 'C#':2, 'D':3, 'D#':4, 'E':5, 'F':6, 
@@ -22,10 +23,18 @@ class TimeMatrix {
         this.addBlock();
     }
 
-    init() { this.container = document.getElementById(this.containerId); return !!this.container; }
+    init() { 
+        this.container = document.getElementById(this.containerId); 
+        return !!this.container; 
+    }
     
-    registerTrack(id) { this.blocks.forEach(b=>{ if(!b.tracks[id]) b.tracks[id] = new Array(this.totalSteps).fill(null); }); }
-    removeTrack(id) { this.blocks.forEach(b=>delete b.tracks[id]); }
+    registerTrack(id) { 
+        this.blocks.forEach(b=>{ if(!b.tracks[id]) b.tracks[id] = new Array(this.totalSteps).fill(null); }); 
+    }
+    
+    removeTrack(id) { 
+        this.blocks.forEach(b=>delete b.tracks[id]); 
+    }
     
     addBlock() {
         const newTracks = {};
@@ -90,37 +99,31 @@ class TimeMatrix {
         return { tracks: b.tracks, drums: b.drums[step]||[] };
     }
 
-    // --- CSV EXPORT SYSTEM ---
-    
+    // --- CSV EXPORT SYSTEM (v37) ---
     exportToCSV() {
         if(!window.audioEngine) return "";
-
         const bpm = window.AppState.bpm;
         const totalStepsGlobal = this.blocks.length * this.totalSteps;
         const synths = window.audioEngine.bassSynths;
+        const drumSynth = window.drumSynth;
         
-        // 1. HEADER ROW: BPM-TotalSteps-TotalSynths, 1, 2, 3...
+        // 1. HEADER
         let csv = `${bpm}-${totalStepsGlobal}-${synths.length}`;
         for(let i=1; i<=totalStepsGlobal; i++) csv += `,${i}`;
         csv += "\n";
 
-        // 2. BASS ROWS
+        // 2. BASS TRACKS
         synths.forEach(synth => {
-            // Encode Config: ID:Vol-Dist-Tone-Gain-Cut-Res-Env-Dec-Acc-Wave
             const p = synth.params;
             const waveInt = p.waveform === 'square' ? 1 : 0;
-            // Order: Volume, Distortion, Tone, Gain, Cutoff, Resonance, EnvMod, Decay, AccentInt, Wave
             const configStr = `${synth.id}:${p.volume}-${p.distortion}-${p.distTone}-${p.distGain}-${p.cutoff}-${p.resonance}-${p.envMod}-${p.decay}-${p.accentInt}-${waveInt}`;
-            
             let row = configStr;
 
-            // Flatten Blocks
             this.blocks.forEach(block => {
                 const track = block.tracks[synth.id];
                 for(let s=0; s<this.totalSteps; s++) {
                     const n = track ? track[s] : null;
                     if(n) {
-                        // Encode Note: NoteInt-Octave-Slide-Accent
                         const nInt = this.noteMap[n.note] || 0;
                         const sld = n.slide ? 1 : 0;
                         const acc = n.accent ? 1 : 0;
@@ -133,29 +136,39 @@ class TimeMatrix {
             csv += row + "\n";
         });
 
-        // 3. DRUM ROW
-        // Config: drums:7
-        let drumRow = `drums:7`;
-        const drumOrder = ['kick', 'snare', 'clap', 'hat', 'ohat', 'tom', 'htom'];
-        
-        this.blocks.forEach(block => {
-            for(let s=0; s<this.totalSteps; s++) {
-                const dStep = block.drums[s] || [];
-                // Binary encoding 0000000
-                let binary = "";
-                drumOrder.forEach(dId => {
-                    binary += dStep.includes(dId) ? "1" : "0";
-                });
-                drumRow += `,${binary}`;
-            }
-        });
-        csv += drumRow;
+        // 3. DRUMS TRACK (Enhanced)
+        if (drumSynth) {
+            // Header: drums:MasterVol:Count|Ch1Data|Ch2Data...
+            // ChData: Type-Variant-Vol-ColorID
+            let drumConfig = `drums:${drumSynth.masterVolume}:${drumSynth.channels.length}`;
+            
+            drumSynth.channels.forEach(ch => {
+                // Assuming colorID corresponds to channel ID by default unless swapped
+                // For simplicity, we use ID as color ID if not explicitly stored
+                const colId = ch.colorId !== undefined ? ch.colorId : ch.id;
+                drumConfig += `|${ch.type}-${ch.variant}-${ch.volume}-${colId}`;
+            });
+
+            let drumRow = drumConfig;
+            
+            this.blocks.forEach(block => {
+                for(let s=0; s<this.totalSteps; s++) {
+                    const dStep = block.drums[s] || [];
+                    let binary = "";
+                    // Write binary for ALL channels (0-8)
+                    drumSynth.channels.forEach(ch => {
+                        binary += dStep.includes(ch.id) ? "1" : "0";
+                    });
+                    drumRow += `,${binary}`;
+                }
+            });
+            csv += drumRow;
+        }
 
         return csv;
     }
 
-    // --- CSV IMPORT SYSTEM ---
-
+    // --- CSV IMPORT SYSTEM (v37) ---
     importFromCSV(csvData) {
         if(!csvData || !window.audioEngine) return false;
 
@@ -163,45 +176,63 @@ class TimeMatrix {
             const lines = csvData.trim().split('\n');
             if(lines.length < 2) throw "Invalid Data";
 
-            // 1. PARSE HEADER
             const headerCells = lines[0].split(',');
-            const meta = headerCells[0].split('-'); // BPM-Steps-Synths
-            
+            const meta = headerCells[0].split('-'); 
             const bpm = parseInt(meta[0]);
             const totalStepsGlobal = parseInt(meta[1]);
             
             if(isNaN(bpm) || isNaN(totalStepsGlobal)) throw "Invalid Metadata";
 
-            // Update App State
             window.AppState.bpm = bpm;
             const bpmInput = document.getElementById('bpm-input');
             if(bpmInput) bpmInput.value = bpm;
 
-            // 2. RESIZE GRID
-            // Clear current blocks
+            // Reset Matrix
             this.blocks = [];
-            
             const blocksNeeded = Math.ceil(totalStepsGlobal / this.totalSteps);
-            for(let i=0; i<blocksNeeded; i++) {
-                this.addBlock();
-            }
+            for(let i=0; i<blocksNeeded; i++) this.addBlock();
 
-            // Remove all existing synths (clean slate approach for simplicity)
-            // But we need to keep at least one to avoid errors, we'll sync later.
-            // Actually, best approach: remove ones not in CSV, add ones in CSV.
-            // For simplicity in this version: We will match by ID or create new ones.
-
-            // 3. PARSE ROWS
             for(let i=1; i<lines.length; i++) {
                 const cells = lines[i].split(',');
-                const configCell = cells[0]; // ID:Params
+                const configCell = cells[0]; 
                 
-                // --- DRUMS ---
+                // --- DRUMS PARSING ---
                 if(configCell.startsWith('drums')) {
-                    const drumOrder = ['kick', 'snare', 'clap', 'hat', 'ohat', 'tom', 'htom'];
+                    const parts = configCell.split('|');
+                    const mainHeader = parts[0].split(':'); // drums:Vol:Count
                     
+                    const masterVol = parseInt(mainHeader[1]);
+                    const chCount = parseInt(mainHeader[2]); // Not strictly used if we rely on pipe split length
+
+                    // Apply to DrumSynth
+                    if(window.drumSynth) {
+                        window.drumSynth.setMasterVolume(masterVol);
+                        
+                        // Parse Channel Configs
+                        // parts[1] to parts[N] are channels
+                        for(let c=1; c<parts.length; c++) {
+                            const chData = parts[c].replace('[','').replace(']','').split('-');
+                            // Format: Type-Variant-Vol-ColorID
+                            const chIdx = c - 1;
+                            if(window.drumSynth.channels[chIdx]) {
+                                // We don't overwrite Type/Name to keep mapping safe, just params
+                                // Or we could dynamic re-type if needed. Keeping simple:
+                                const variant = parseInt(chData[1]);
+                                const vol = parseInt(chData[2]);
+                                const colId = parseInt(chData[3]);
+                                
+                                window.drumSynth.setChannelVariant(chIdx, variant);
+                                window.drumSynth.setChannelVolume(chIdx, vol);
+                                // Set Color if supported (future proofing)
+                                if(window.drumSynth.channels[chIdx].colorId !== undefined) {
+                                    window.drumSynth.channels[chIdx].colorId = colId;
+                                }
+                            }
+                        }
+                    }
+
+                    // Parse Grid
                     for(let stepGlobal=0; stepGlobal < totalStepsGlobal; stepGlobal++) {
-                        // Col index starts at 1
                         const binary = cells[stepGlobal + 1];
                         if(!binary) continue;
 
@@ -210,81 +241,63 @@ class TimeMatrix {
 
                         if(this.blocks[blockIdx]) {
                             const activeDrums = [];
+                            // Map bits to Channel IDs
                             for(let bit=0; bit<binary.length; bit++) {
-                                if(binary[bit] === '1' && drumOrder[bit]) {
-                                    activeDrums.push(drumOrder[bit]);
+                                if(binary[bit] === '1') {
+                                    activeDrums.push(bit); // Store Channel ID (Index)
                                 }
                             }
                             this.blocks[blockIdx].drums[stepIdx] = activeDrums;
                         }
                     }
                 } 
-                // --- BASS SYNTHS ---
+                // --- BASS PARSING ---
                 else if(configCell.includes(':')) {
                     const parts = configCell.split(':');
                     const id = parts[0];
                     const paramsStr = parts[1];
-                    const pVals = paramsStr.split('-').map(Number); // Vol, Dist, Tone, Gain...
+                    const pVals = paramsStr.split('-').map(Number);
 
-                    // Ensure Synth Exists
                     let synth = window.audioEngine.getSynth(id);
-                    if(!synth) {
-                        synth = window.audioEngine.addBassSynth(id);
-                    }
+                    if(!synth) synth = window.audioEngine.addBassSynth(id);
 
-                    // Apply Params
                     if(synth && pVals.length >= 10) {
-                        synth.setVolume(pVals[0]);
-                        synth.setDistortion(pVals[1]);
-                        synth.setDistTone(pVals[2]);
-                        synth.setDistGain(pVals[3]);
-                        synth.setCutoff(pVals[4]);
-                        synth.setResonance(pVals[5]);
-                        synth.setEnvMod(pVals[6]);
-                        synth.setDecay(pVals[7]);
+                        synth.setVolume(pVals[0]); synth.setDistortion(pVals[1]);
+                        synth.setDistTone(pVals[2]); synth.setDistGain(pVals[3]);
+                        synth.setCutoff(pVals[4]); synth.setResonance(pVals[5]);
+                        synth.setEnvMod(pVals[6]); synth.setDecay(pVals[7]);
                         synth.setAccentInt(pVals[8]);
                         synth.setWaveform(pVals[9] === 1 ? 'square' : 'sawtooth');
                     }
-
-                    // Register track in matrix
                     this.registerTrack(id);
 
-                    // Parse Notes
                     for(let stepGlobal=0; stepGlobal < totalStepsGlobal; stepGlobal++) {
                         const noteData = cells[stepGlobal + 1];
                         if(!noteData || noteData === '0') continue;
-
                         const blockIdx = Math.floor(stepGlobal / this.totalSteps);
                         const stepIdx = stepGlobal % this.totalSteps;
-
-                        // Format: NoteInt-Oct-Sld-Acc
                         const nParts = noteData.split('-');
                         if(nParts.length === 4) {
                             const noteInt = parseInt(nParts[0]);
                             const noteChar = this.noteMapRev[noteInt];
-                            
                             if(this.blocks[blockIdx] && noteChar) {
                                 this.blocks[blockIdx].tracks[id][stepIdx] = {
-                                    note: noteChar,
-                                    octave: parseInt(nParts[1]),
-                                    slide: nParts[2] === '1',
-                                    accent: nParts[3] === '1'
+                                    note: noteChar, octave: parseInt(nParts[1]),
+                                    slide: nParts[2] === '1', accent: nParts[3] === '1'
                                 };
                             }
                         }
                     }
                 }
             }
-
             return true;
-
         } catch(e) {
             console.error("CSV Import Error:", e);
-            if(window.logToScreen) window.logToScreen("Import Error: " + e, 'error');
             return false;
         }
     }
 
+    // --- RENDER ---
     render(activeView, blockIndex) {
         if (!this.init()) return;
         this.container.innerHTML = '';
@@ -297,13 +310,10 @@ class TimeMatrix {
             const el = document.createElement('div');
             el.className = 'step-box';
             
-            if (i === this.selectedStep) {
-                el.classList.add('step-selected-orange');
-            }
+            if (i === this.selectedStep) el.classList.add('step-selected');
             
-            if (activeView === 'drum') {
-                this.drawDrums(el, block.drums[i], i);
-            } else {
+            if (activeView === 'drum') this.drawDrums(el, block.drums[i], i);
+            else {
                 if(!block.tracks[activeView]) this.registerTrack(activeView);
                 this.drawNote(el, block.tracks[activeView][i], i);
             }
@@ -320,26 +330,33 @@ class TimeMatrix {
         if(data) {
             el.classList.add('has-bass');
             const noteStr = `${data.accent ? '^' : ''}${data.note}${data.slide ? '~' : ''}`;
-            el.innerHTML = `<div class="flex flex-col items-center pointer-events-none"><span class="text-xl font-bold">${noteStr}</span><span class="text-[10px] opacity-70">${data.octave}</span></div>`;
+            el.innerHTML = `<div class="matrix-cell-content"><span class="matrix-note-text">${noteStr}</span><span class="matrix-oct-text">${data.octave}</span></div>`;
         } else {
             el.classList.remove('has-bass');
-            el.innerHTML = `<span class="text-[10px] text-gray-700 font-mono pointer-events-none">${i+1}</span>`;
+            el.innerHTML = `<span class="matrix-step-num">${i+1}</span>`;
         }
     }
 
     drawDrums(el, drums, i) {
         el.classList.remove('has-bass');
         if(drums && drums.length) {
-            let html = '<div class="flex flex-wrap gap-1 justify-center px-1 pointer-events-none">';
-            const kits = (window.drumSynth && window.drumSynth.kits) ? window.drumSynth.kits : [];
-            drums.forEach(id => {
-                const k = kits.find(x=>x.id===id);
-                const c = k ? k.color : '#fff';
-                html += `<div class="w-2 h-2 rounded-full shadow-[0_0_5px_${c}]" style="background:${c}"></div>`;
+            let html = '<div class="matrix-drum-container">';
+            // Use window.drumSynth.channels to get active state and colors
+            const channels = window.drumSynth ? window.drumSynth.channels : [];
+            const colors = window.drumSynth ? window.drumSynth.channelColors : [];
+            
+            drums.forEach(chId => {
+                const ch = channels[chId];
+                // Only draw if channel is active (variant > 0)
+                if (ch && ch.variant > 0) {
+                    const colIndex = (ch.colorId !== undefined) ? ch.colorId : ch.id;
+                    const c = colors[colIndex % colors.length] || '#fff';
+                    html += `<div class="matrix-drum-dot" style="background-color:${c}; box-shadow: 0 0 4px ${c};"></div>`;
+                }
             });
             el.innerHTML = html + '</div>';
         } else {
-            el.innerHTML = `<span class="text-[10px] text-gray-700 font-mono pointer-events-none">${i+1}</span>`;
+            el.innerHTML = `<span class="matrix-step-num">${i+1}</span>`;
         }
     }
 
